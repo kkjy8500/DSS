@@ -1,6 +1,8 @@
 # =============================
 # File: data_loader.py
 # =============================
+from __future__ import annotations
+
 import pandas as pd
 from pathlib import Path
 
@@ -15,8 +17,13 @@ def _read_csv_safe(path: Path, encoding: str = "utf-8") -> pd.DataFrame:
     return pd.DataFrame()
 
 def load_population_agg(data_dir: Path) -> pd.DataFrame:
-    # 기존: population_agg.csv
-    return _read_csv_safe(data_dir / "population.csv")
+    """
+    population_agg.csv 우선, 없으면 population.csv 대체 로딩
+    """
+    df = _read_csv_safe(data_dir / "population_agg.csv")
+    if df is None or len(df) == 0:
+        df = _read_csv_safe(data_dir / "population.csv")
+    return df
 
 def load_party_competence(data_dir: Path) -> pd.DataFrame:
     return _read_csv_safe(data_dir / "progressive_party.csv")

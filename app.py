@@ -13,12 +13,12 @@ from data_loader import (
     load_vote_trend,
     load_results_2024,
     load_current_info,
-    load_index_sample
+    load_index_sample,
 )
 from metrics import (
     compute_trend_series,
     compute_summary_metrics,
-    compute_24_gap,
+    compute_24_gap,  # 사용 예정이라면 유지, 미사용이면 삭제해도 무방
 )
 from charts import (
     render_population_box,
@@ -37,6 +37,45 @@ st.title("전략지역구 조사 · 지역별 페이지")
 DATA_DIR = Path("data")
 
 # -----------------------------
+# 코드 컬럼 표준화 유틸
+# -----------------------------
+CODE_CANDIDATES = ["코드", "code", "CODE", "선거구코드", "지역코드"]
+
+def ensure_code_col(df: pd.DataFrame | None, src_name: str = "df") -> pd.DataFrame:
+    """
+    여러 형태로 들어올 수 있는 코드 컬럼을 '코드'(str)로 표준화.
+    - 컬럼명이 다르거나 인덱스로 들어온 경우를 처리
+    - 최종적으로 문자열 타입으로 통일
+    """
+    if df is None or len(df) == 0:
+        # 빈 DF도 그대로 반환 (후속 로직이 빈값 처리)
+        return df if df is not None else pd.DataFrame()
+
+    df2 = df.copy()
+
+    # 1) 컬럼 이름 매핑
+    if "코드" not in df2.columns:
+        for c in CODE_CANDIDATES:
+            if c in df2.columns:
+                df2 = df2.rename(columns={c: "코드"})
+                break
+
+    # 2) 인덱스에 코드가 들어있는 경우
+    if "코드" not in df2.columns:
+        idx_name = df2.index.name
+        if idx_name in CODE_CANDIDATES or idx_name == "코드":
+            df2 = df2.reset_index().rename(columns={idx_name if idx_name else "index": "코드"})
+
+    # 3) 최종 타입 통일
+    if "코드" in df2.columns:
+        df2["코드"] = df2["코드"].astype(str)
+    else:
+        # 여전히 없으면 후속 계산에서 안전 탈출하도록 보조 플래그
+        df2["__NO_CODE__"] = True
+
+    return df2
+
+# -----------------------------
 # Load Data
 # -----------------------------
 with st.spinner("데이터 불러오는 중..."):
@@ -46,6 +85,14 @@ with st.spinner("데이터 불러오는 중..."):
     df_24 = load_results_2024(DATA_DIR)
     df_curr = load_current_info(DATA_DIR)
     df_idx = load_index_sample(DATA_DIR)  # 선택: EE_/PL_* A지표 등 외부 제공치
+
+# --- 로드 직후 코드 표준화 (중요) ---
+df_pop   = ensure_code_col(df_pop,   "df_pop")
+df_prg   = ensure_code_col(df_prg,   "df_prg")
+df_trend = ensure_code_col(df_trend, "df_trend")
+df_24    = ensure_code_col(df_24,    "df_24")
+df_curr  = ensure_code_col(df_curr,  "df_curr")
+df_idx   = ensure_code_col(df_idx,   "df_idx")
 
 # 가용 지역 목록(코드/이름)
 regions = (
@@ -58,8 +105,12 @@ regions = (
 st.sidebar.header("지역 선택")
 sel_label = st.sidebar.selectbox(
     "선거구를 선택하세요",
-    regions["선거구명"].tolist(),
+    regions["선거구명"].tolist() if not regions.empty else [],
 )
+if regions.empty:
+    st.error("선택 가능한 지역이 없습니다. 데이터 소스를 확인하세요.")
+    st.stop()
+
 sel_code = regions.loc[regions["선거구명"] == sel_label, "코드"].iloc[0]
 
 # -----------------------------
@@ -98,8 +149,17 @@ with col_b:
 
 # 지표 요약(유동성/경합도 등) — 우측 아래 간략 배치
 summary = compute_summary_metrics(df_trend, df_24, df_idx, sel_code)
+# NaN/None 방지용 안전 포맷
+pl_prg_str = summary.get("PL_prg_str")
+pl_swing_b = summary.get("PL_swing_B")
+pl_gap_b   = summary.get("PL_gap_B")
+
+prg_text = f"{pl_prg_str:.2f}%" if isinstance(pl_prg_str, (int, float)) else "N/A"
+gap_text = f"{pl_gap_b:.2f}p" if isinstance(pl_gap_b, (int, float)) else "N/A"
+swing_text = str(pl_swing_b) if pl_swing_b is not None else "N/A"
+
 st.caption(
-    f"요약지표 · 진보정당득표력: {summary['PL_prg_str']:.2f}% · 유동성B: {summary['PL_swing_B']} · 경합도B: {summary['PL_gap_B']:.2f}p"
+    f"요약지표 · 진보정당득표력: {prg_text} · 유동성B: {swing_text} · 경합도B: {gap_text}"
 )
 
 st.divider()
@@ -113,4 +173,3 @@ render_population_box(df_pop[df_pop["코드"] == sel_code])
 # 푸터
 st.write("")
 st.caption("© 2025 전략지역구 조사 · Streamlit 대시보드")
-

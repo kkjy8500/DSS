@@ -89,7 +89,7 @@ df_comp, df_ge, df_inc = load_all()
 required_comp_cols = {"코드", "선거구", "진보당 당원수", "진보당 지방선거후보"}
 required_ge_cols   = {"코드", "선거구", "연도"}
 required_inc_cols  = {"코드", "선거구", "이름", "정당", "성별", "연령", "선수", "24년득표", "24년득표율", "인물경쟁력", "재출마가능성"}
-@@ -81,93 +66,135 @@ def load_all():
+def load_all():
         st.error(f"❌ `{name}`에 필요한 열이 없습니다: {sorted(missing)}")
         st.stop()
 

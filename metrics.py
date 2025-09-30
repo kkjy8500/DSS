@@ -6,32 +6,53 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-# 색상 팔레트(차트 공통 사용)
-COLORS = {
-    "progressive": "#E45756",
-    "conservative": "#4C78A8",
-    "centrist": "#72B7B2",
-    "others": "#A0A0A0",
-}
+# 내부적으로도 컬럼 후보를 사용
+_CODE_CANDIDATES = ["코드", "지역구코드", "선거구코드", "지역코드", "code", "CODE"]
+
+def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or len(df) == 0:
+        return pd.DataFrame() if df is None else df
+    df2 = df.copy()
+    df2.columns = [str(c).strip().replace("\n", "").replace("\r", "") for c in df2.columns]
+    return df2
+
+def _detect_code_col(df: pd.DataFrame) -> str or None:
+    for c in _CODE_CANDIDATES:
+        if c in df.columns:
+            return c
+    cols = [str(c).strip().replace("\n", "").replace("\r", "") for c in df.columns]
+    for cand in _CODE_CANDIDATES:
+        if cand in cols:
+            return df.columns[cols.index(cand)]
+    return None
+
+def _get_by_code_local(df: pd.DataFrame, code: str) -> pd.DataFrame:
+    if df is None or len(df) == 0:
+        return pd.DataFrame()
+    df2 = _normalize_columns(df)
+    col = "코드" if "코드" in df2.columns else _detect_code_col(df2)
+    if not col:
+        return pd.DataFrame()
+    try:
+        return df2[df2[col].astype(str) == str(code)]
+    except Exception:
+        return pd.DataFrame()
 
 def compute_trend_series(df_trend: pd.DataFrame, code: str) -> pd.DataFrame:
     """주어진 선거구(code)에 대한 정당성향별 득표 추이 시계열을 반환."""
-    if df_trend is None or len(df_trend) == 0:
-        return pd.DataFrame()
-    code_str = str(code)
-    if "코드" in df_trend.columns:
-        out = df_trend[df_trend["코드"].astype(str) == code_str].copy()
-    else:
-        out = df_trend.iloc[0:0].copy()
-    return out
+    return _get_by_code_local(df_trend, code)
 
 def compute_24_gap(df_24: pd.DataFrame, code: str) -> float or None:
     """2024 총선에서 1위-2위 득표율 격차를 계산 (가능할 때만)."""
     try:
-        row24 = df_24[df_24["코드"].astype(str) == str(code)]
-        if not row24.empty and {"1위득표율", "2위득표율"}.issubset(row24.columns):
-            gap = float(row24.iloc[0]["1위득표율"]) - float(row24.iloc[0]["2위득표율"])
-            return round(gap, 2)
+        row24 = _get_by_code_local(df_24, code)
+        if not row24.empty:
+            # 후보 컬럼명 유연 인식
+            c1v = next((c for c in ["1위득표율","1위 득표율","1st_share"] if c in row24.columns), None)
+            c2v = next((c for c in ["2위득표율","2위 득표율","2nd_share"] if c in row24.columns), None)
+            if c1v and c2v:
+                gap = float(row24.iloc[0][c1v]) - float(row24.iloc[0][c2v])
+                return round(gap, 2)
     except Exception:
         pass
     return None
@@ -54,19 +75,10 @@ def compute_summary_metrics(
         "PL_gap_B": np.nan,
     }
 
-    code_str = str(code)
-
-    # 외부 지표가 없거나 '코드'가 없으면 24년 격차만 계산
-    if df_idx is None or len(df_idx) == 0 or ("코드" not in df_idx.columns):
-        gap = compute_24_gap(df_24, code_str)
-        if gap is not None:
-            out["PL_gap_B"] = gap
-        return out
-
-    # 대상 행 추출
-    sub = df_idx[df_idx["코드"].astype(str) == code_str]
-    if sub.empty:
-        gap = compute_24_gap(df_24, code_str)
+    # 외부 지표가 없거나 코드 매칭 실패 시 24년 격차로 대체
+    sub = _get_by_code_local(df_idx, code)
+    if sub is None or sub.empty:
+        gap = compute_24_gap(df_24, code)
         if gap is not None:
             out["PL_gap_B"] = gap
         return out
@@ -90,11 +102,13 @@ def compute_summary_metrics(
         try:
             out["PL_gap_B"] = float(row["PL_gap_B"])
         except Exception:
-            gap = compute_24_gap(df_24, code_str)
+            # 외부 값 파싱 실패 시 24년 격차로 보조
+            gap = compute_24_gap(df_24, code)
             if gap is not None:
                 out["PL_gap_B"] = gap
     else:
-        gap = compute_24_gap(df_24, code_str)
+        # 필드 자체가 없으면 24년 격차 보조
+        gap = compute_24_gap(df_24, code)
         if gap is not None:
             out["PL_gap_B"] = gap
 

@@ -11,6 +11,34 @@ from charts import (
     metric_triplet, top3_cards, results_table, incumbent_card
 )
 
+from __future__ import annotations
+import pandas as pd
+import streamlit as st
+from pathlib import Path
+
+from charts import pie_age_buckets, pie_2030_gender, bar_2030_single_household
+
+st.set_page_config(
+    page_title="지역구 선정 1단계 조사 결과 대시보드",
+    page_icon="🗳️",
+    layout="wide",
+)
+
+st.title("🗳️ 지역구 선정 1단계 조사 결과")
+st.caption("에스티아이")
+
+# ---------- 사이드바 ----------
+st.sidebar.header("메뉴 선택")
+menu = st.sidebar.radio("페이지", ["종합", "지역별 분석", "데이터 설명"], index=1)
+
+regions = [
+    "강서구병","관악구을","구로구갑","서대문구갑","은평구갑",
+    "고양시을","부천시을","수원시을","평택시을","화성시을"
+]
+selected_region = st.sidebar.selectbox("지역을 선택하세요", regions, index=0)
+
+
+
 DATA_DIR = Path("data")
 FILE_COMP = DATA_DIR / "(sample)party_competence.csv"
 FILE_GE24 = DATA_DIR / "5_na_dis_results.csv"

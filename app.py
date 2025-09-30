@@ -91,27 +91,27 @@ df_curr  = ensure_code_col(df_curr,  "df_curr")
 df_idx   = ensure_code_col(df_idx,   "df_idx")
 
 # 가용 지역 목록(코드/이름)
-if "선거구명" not in df_pop.columns:
-    st.error("df_pop에 '선거구명' 컬럼이 없습니다. 데이터 파일을 확인하세요.")
+if "지역구" not in df_pop.columns:
+    st.error("df_pop에 '지역구' 컬럼이 없습니다. 데이터 파일을 확인하세요.")
     st.stop()
 
 regions = (
-    df_pop[["코드", "선거구명"]]
+    df_pop[["코드", "지역구"]]
     .drop_duplicates()
-    .sort_values("선거구명")
+    .sort_values("지역구")
 )
 
 # 사이드바 — 지역 선택
 st.sidebar.header("지역 선택")
 sel_label = st.sidebar.selectbox(
     "선거구를 선택하세요",
-    regions["선거구명"].tolist() if not regions.empty else [],
+    regions["지역구"].tolist() if not regions.empty else [],
 )
 if regions.empty:
     st.error("선택 가능한 지역이 없습니다. 데이터 소스를 확인하세요.")
     st.stop()
 
-sel_code = regions.loc[regions["선거구명"] == sel_label, "코드"].iloc[0]
+sel_code = regions.loc[regions["지역구"] == sel_label, "코드"].iloc[0]
 
 # -----------------------------
 # 상단 레이아웃: 좌(24년 결과) — 우(현직정보)

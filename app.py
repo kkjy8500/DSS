@@ -18,7 +18,7 @@ from data_loader import (
 from metrics import (
     compute_trend_series,
     compute_summary_metrics,
-    compute_24_gap,  # 사용 예정이라면 유지, 미사용이면 삭제해도 무방
+    compute_24_gap,
 )
 from charts import (
     render_population_box,
@@ -42,14 +42,11 @@ DATA_DIR = Path("data")
 CODE_CANDIDATES = ["코드", "code", "CODE", "선거구코드", "지역코드"]
 
 def ensure_code_col(df: pd.DataFrame | None, src_name: str = "df") -> pd.DataFrame:
-    """
-    여러 형태로 들어올 수 있는 코드 컬럼을 '코드'(str)로 표준화.
-    - 컬럼명이 다르거나 인덱스로 들어온 경우를 처리
-    - 최종적으로 문자열 타입으로 통일
-    """
-    if df is None or len(df) == 0:
-        # 빈 DF도 그대로 반환 (후속 로직이 빈값 처리)
-        return df if df is not None else pd.DataFrame()
+    """여러 형태로 들어올 수 있는 코드 컬럼을 '코드'(str)로 표준화."""
+    if df is None:
+        return pd.DataFrame()
+    if len(df) == 0:
+        return df
 
     df2 = df.copy()
 
@@ -70,7 +67,7 @@ def ensure_code_col(df: pd.DataFrame | None, src_name: str = "df") -> pd.DataFra
     if "코드" in df2.columns:
         df2["코드"] = df2["코드"].astype(str)
     else:
-        # 여전히 없으면 후속 계산에서 안전 탈출하도록 보조 플래그
+        # 후속 계산에서 안전 탈출하도록 보조 플래그
         df2["__NO_CODE__"] = True
 
     return df2
@@ -79,12 +76,12 @@ def ensure_code_col(df: pd.DataFrame | None, src_name: str = "df") -> pd.DataFra
 # Load Data
 # -----------------------------
 with st.spinner("데이터 불러오는 중..."):
-    df_pop = load_population_agg(DATA_DIR)               # 지역구 단위 합산
+    df_pop = load_population_agg(DATA_DIR)               # 지역구 단위 합산(또는 이미 합산)
     df_prg = load_party_competence(DATA_DIR)
     df_trend = load_vote_trend(DATA_DIR)
     df_24 = load_results_2024(DATA_DIR)
     df_curr = load_current_info(DATA_DIR)
-    df_idx = load_index_sample(DATA_DIR)  # 선택: EE_/PL_* A지표 등 외부 제공치
+    df_idx = load_index_sample(DATA_DIR)  # 선택 외부지표(EE_/PL_* 등)
 
 # --- 로드 직후 코드 표준화 (중요) ---
 df_pop   = ensure_code_col(df_pop,   "df_pop")
@@ -95,6 +92,10 @@ df_curr  = ensure_code_col(df_curr,  "df_curr")
 df_idx   = ensure_code_col(df_idx,   "df_idx")
 
 # 가용 지역 목록(코드/이름)
+if "선거구명" not in df_pop.columns:
+    st.error("df_pop에 '선거구명' 컬럼이 없습니다. 데이터 파일을 확인하세요.")
+    st.stop()
+
 regions = (
     df_pop[["코드", "선거구명"]]
     .drop_duplicates()
@@ -121,7 +122,7 @@ col_left, col_right = st.columns([1.2, 1])
 with col_left:
     st.subheader("24년 총선결과")
     res_row = df_24[df_24["코드"] == sel_code]
-    render_results_2024_card(res_row)
+    render_results_2024_card(res_row, df_24=df_24, code=sel_code)
 
 with col_right:
     st.subheader("현직정보")

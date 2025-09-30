@@ -8,7 +8,6 @@ from pathlib import Path
 from utils import (
     load_csv_safe, parse_int, parse_float_pct, fmt_int, fmt_pct2,
     candidates_long_from_wide, get_top3_and_gap, get_available_districts,
-@@ -11,62 +14,44 @@
     metric_triplet, top3_cards, results_table, incumbent_card
 )
 

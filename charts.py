@@ -1,6 +1,14 @@
 # charts.py
 from __future__ import annotations
 import pandas as pd
+
+from pathlib import Path
+
+def load_population() -> pd.DataFrame:
+    path = Path("data/population.csv")
+    df = pd.read_csv(path)
+    return df
+
 import altair as alt
 import streamlit as st
 
@@ -82,3 +90,4 @@ def bar_2030_single_household(df_by_region: pd.DataFrame, selected_region: str) 
         .properties(height=360)
     )
     st.altair_chart(chart, use_container_width=True)
+

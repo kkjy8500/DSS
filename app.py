@@ -1,5 +1,9 @@
+# =============================
+# File: app.py
+# =============================
 from __future__ import annotations
 
+import re
 import streamlit as st
 import pandas as pd
 from pathlib import Path
@@ -28,7 +32,7 @@ from charts import (
 )
 
 # -----------------------------
-# Page Config
+# Page Config (요청 사양)
 # -----------------------------
 st.set_page_config(
     page_title="지역구 선정 1단계 조사 결과 대시보드",
@@ -52,7 +56,7 @@ DATA_DIR = Path("data")
 # 공통 유틸
 # -----------------------------
 CODE_CANDIDATES = ["코드", "지역구코드", "선거구코드", "지역코드", "code", "CODE"]
-NAME_CANDIDATES = ["지역구", "선거구명", "지역명", "district", "지역구명", "region", "지역"]
+NAME_CANDIDATES = ["지역구", "선거구", "선거구명", "지역명", "district", "지역구명", "region", "지역"]
 SIDO_CANDIDATES = ["시/도", "시도", "광역", "sido", "province"]
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -71,6 +75,13 @@ def _detect_col(df: pd.DataFrame, candidates: list) -> str | None:
         if cand in cols:
             return df.columns[cols.index(cand)]
     return None
+
+def _canon_code(x: object) -> str:
+    """하이픈/공백 제거, 대소문자 무시, 선행 0 제거 → 코드 표준화"""
+    s = str(x).strip()
+    s = re.sub(r"[^0-9A-Za-z]", "", s)
+    s = s.lstrip("0")
+    return s.lower()
 
 def ensure_code_col(df: pd.DataFrame) -> pd.DataFrame:
     """여러 이름의 코드 컬럼을 '코드'(str)로 표준화."""
@@ -94,7 +105,7 @@ def ensure_code_col(df: pd.DataFrame) -> pd.DataFrame:
     return df2
 
 def get_by_code(df: pd.DataFrame, code: str) -> pd.DataFrame:
-    """코드 컬럼 자동 탐지 후 해당 code 행만 반환(없으면 빈 DF)."""
+    """코드 컬럼 자동 탐지 + 표준화 비교로 해당 code 행만 반환(없으면 빈 DF)."""
     if df is None or len(df) == 0:
         return pd.DataFrame()
     df2 = _normalize_columns(df)
@@ -102,7 +113,9 @@ def get_by_code(df: pd.DataFrame, code: str) -> pd.DataFrame:
     if not code_col:
         return pd.DataFrame()
     try:
-        return df2[df2[code_col].astype(str) == str(code)]
+        key = _canon_code(code)
+        sub = df2[df2[code_col].astype(str).map(_canon_code) == key]
+        return sub if len(sub) else pd.DataFrame()
     except Exception:
         return pd.DataFrame()
 
@@ -177,7 +190,13 @@ df_idx   = ensure_code_col(df_idx)
 if menu == "종합":
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.metric("지역 수", f"{df_trend['코드'].nunique() if '코드' in df_trend.columns else (df_pop['코드'].nunique() if '코드' in df_pop.columns else 0):,}")
+        # trend 우선, 없으면 pop
+        n_regions = 0
+        if "코드" in df_trend.columns and len(df_trend) > 0:
+            n_regions = df_trend["코드"].astype(str).map(_canon_code).nunique()
+        elif "코드" in df_pop.columns and len(df_pop) > 0:
+            n_regions = df_pop["코드"].astype(str).map(_canon_code).nunique()
+        st.metric("지역 수", f"{n_regions:,}")
     with c2:
         st.metric("데이터 소스(표) 수", f"{sum([len(x) > 0 for x in [df_pop, df_24, df_curr, df_trend, df_prg, df_idx]])}/6")
     with c3:
@@ -194,6 +213,7 @@ if menu == "종합":
             st.subheader("시/도별 지역구 개수")
             vc = (
                 base_for_sido[[sido_col, "코드"]].dropna()
+                .assign(코드=base_for_sido["코드"].astype(str).map(_canon_code))
                 .groupby(sido_col)["코드"].nunique()
                 .sort_values(ascending=False)
                 .rename("지역구수")

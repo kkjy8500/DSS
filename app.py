@@ -41,7 +41,7 @@ DATA_DIR = Path("data")
 # -----------------------------
 CODE_CANDIDATES = ["코드", "code", "CODE", "선거구코드", "지역코드"]
 
-def ensure_code_col(df: pd.DataFrame | None, src_name: str = "df") -> pd.DataFrame:
+def ensure_code_col(df: pd.DataFrame, src_name: str = "df") -> pd.DataFrame:
     """여러 형태로 들어올 수 있는 코드 컬럼을 '코드'(str)로 표준화."""
     if df is None:
         return pd.DataFrame()
@@ -67,7 +67,6 @@ def ensure_code_col(df: pd.DataFrame | None, src_name: str = "df") -> pd.DataFra
     if "코드" in df2.columns:
         df2["코드"] = df2["코드"].astype(str)
     else:
-        # 후속 계산에서 안전 탈출하도록 보조 플래그
         df2["__NO_CODE__"] = True
 
     return df2
@@ -144,13 +143,11 @@ with col_a:
 
 with col_b:
     st.subheader("정당성향별 득표추이")
-    # 2016~2025 전체 10개 선거 반영 (dataset에 존재하는 항목 기준)
     ts = compute_trend_series(df_trend, sel_code)
     render_vote_trend_chart(ts)
 
-# 지표 요약(유동성/경합도 등) — 우측 아래 간략 배치
+# 지표 요약
 summary = compute_summary_metrics(df_trend, df_24, df_idx, sel_code)
-# NaN/None 방지용 안전 포맷
 pl_prg_str = summary.get("PL_prg_str")
 pl_swing_b = summary.get("PL_swing_B")
 pl_gap_b   = summary.get("PL_gap_B")

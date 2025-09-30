@@ -17,7 +17,7 @@ from data_loader import (
 )
 from metrics import (
     compute_trend_series,
-    compute_summary_metrics,
+    metrics.py,
     compute_24_gap,
 )
 from charts import (

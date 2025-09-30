@@ -15,7 +15,8 @@ def _read_csv_safe(path: Path, encoding: str = "utf-8") -> pd.DataFrame:
     return pd.DataFrame()
 
 def load_population_agg(data_dir: Path) -> pd.DataFrame:
-    return _read_csv_safe(data_dir / "population_agg.csv")
+    # 기존: population_agg.csv
+    return _read_csv_safe(data_dir / "population.csv")
 
 def load_party_competence(data_dir: Path) -> pd.DataFrame:
     return _read_csv_safe(data_dir / "progressive_party.csv")

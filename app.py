@@ -4,8 +4,15 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
-from utils import load_csv_safe, parse_int, parse_float_pct, fmt_int, fmt_pct2, candidates_long_from_wide, get_top3_and_gap, get_available_districts, inject_pretendard, cache_data
-from charts import top3_cards, results_table, incumbent_card
+# 내부 모듈
+from utils import (
+    load_csv_safe, parse_int, parse_float_pct, fmt_int, fmt_pct2,
+    candidates_long_from_wide, get_top3_and_gap, get_available_districts,
+    inject_pretendard, badge, cache_data
+)
+from charts import (
+    metric_triplet, top3_cards, results_table, incumbent_card
+)
 
 # -----------------------------
 # 페이지 설정
@@ -56,7 +63,7 @@ for need, df, name in [
 ]:
     missing = need - set(df.columns)
     if missing:
-        st.error(f"❌ `{name}`에 필요한 열이 없습니다: {sorted(missing)}")
+        st.error(f"❌ {name}에 필요한 열이 없습니다: {sorted(missing)}")
         st.stop()
 
 # 교집합 지역 목록 (코드, 선거구)
@@ -71,11 +78,12 @@ if not district_opts:
 st.sidebar.header("메뉴 선택")
 menu = st.sidebar.radio("페이지", ["종합", "지역별 분석", "데이터 설명"], index=0)
 
-# 데이터 기반 지역 목록 (라벨은 이름만)
+# 데이터 기반 지역 목록
 opt_labels = [name for code, name in district_opts]
 opt_map = {name: (code, name) for code, name in district_opts}
 choice = st.sidebar.selectbox("지역을 선택하세요", opt_labels, index=0)
 sel_code, sel_name = opt_map[choice]
+
 
 # -----------------------------
 # 공통 전처리 (24년 총선 결과)
@@ -100,6 +108,7 @@ if menu == "종합":
         st.metric("데이터 파일", "3개")
     with c3:
         st.metric("표시 기준", "정치지형1·24총선·현직")
+
 
     st.write("---")
     st.markdown("#### 바로 가기")
@@ -127,53 +136,40 @@ elif menu == "지역별 분석":
     # 제목
     st.subheader(f"지역별 분석 · **{sel_name}**")
 
-    # ─────────────────────────────
-    # 진보당 현황 (2 메트릭)
-    # ─────────────────────────────
-    st.markdown("##### 진보당 현황")
-    m1, m2 = st.columns(2)
-    with m1:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.metric(label="진보당 당원수(명)", value=fmt_int(jinbo_members) if jinbo_members is not None else "데이터 없음")
-        st.markdown('</div>', unsafe_allow_html=True)
-    with m2:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.metric(label="진보당 지방선거 후보(명) · 기준: 2022", value=fmt_int(jinbo_cands) if jinbo_cands is not None else "데이터 없음")
-        st.markdown('</div>', unsafe_allow_html=True)
+    # 요약
+    st.markdown("##### 요약")
+    metric_triplet(
+        title1="진보당 당원수(명)",
+        value1=fmt_int(jinbo_members) if jinbo_members is not None else "데이터 없음",
+        title2="진보당 지방선거 후보(명) · 기준: 2022",
+        value2=fmt_int(jinbo_cands) if jinbo_cands is not None else "데이터 없음",
+        title3="1-2위 격차(%p, 2024)",
+        value3=fmt_pct2(gap_pct, suffix=""),
+    )
 
-    st.divider()
+    # 24년 총선결과
+    st.markdown("##### 24년 총선결과")
+    top3_cards(top3_df)
+    results_table(res_rows)
+    st.caption(
+        badge("출처", "5_na_dis_results.csv (연도=2024)") + " " +
+        badge("정책", "후보 이름/정당은 CSV 문자열 그대로, 정당 색상 미사용")
+    )
 
-    # ─────────────────────────────
-    # 좌우 2단 레이아웃: 좌(24총선결과+격차), 우(현직 정보)
-    # ─────────────────────────────
-    left, right = st.columns([1.6, 1.0], gap="large")
-
-    # 왼쪽: 24년 총선결과 + 격차
-    with left:
-        st.markdown("##### 24년 총선결과")
-        # 1-2위 격차를 결과 제목 아래에 배치(작게)
-        if gap_pct is not None:
-            st.markdown(
-                f'<div class="badge"><b>1-2위 격차</b> {fmt_pct2(gap_pct, suffix="")}%p</div>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.markdown('<div class="badge"><b>1-2위 격차</b> 데이터 없음</div>', unsafe_allow_html=True)
-
-        top3_cards(top3_df)
-        results_table(res_rows)
-
-    # 오른쪽: 현직 정보 카드
-    with right:
-        st.markdown("##### 현직 정보")
-        incumbent_card(
-            sel_name=sel_name,
-            row=inc_row.iloc[0],
-            kpi1_name="24년 득표율",
-            kpi1_value=parse_float_pct(inc_row["24년득표율"].iloc[0]),
-            kpi2_name="1-2위 격차",
-            kpi2_value=gap_pct,
-        )
+    # 현직 정보
+    st.markdown("##### 현직 정보")
+    incumbent_card(
+        sel_name=sel_name,
+        row=inc_row.iloc[0],
+        kpi1_name="24년 득표율",
+        kpi1_value=parse_float_pct(inc_row["24년득표율"].iloc[0]),
+        kpi2_name="1-2위 격차",
+        kpi2_value=gap_pct,
+    )
+    st.caption(
+        badge("출처", "current_info.csv / 5_na_dis_results.csv") + " " +
+        badge("표시", "연령·선수 문자열 그대로, 인물경쟁력/재출마가능성 표시")
+    )
 
 elif menu == "데이터 설명":
     st.subheader("데이터 설명")

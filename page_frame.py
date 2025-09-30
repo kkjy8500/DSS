@@ -52,14 +52,15 @@ def aggregate_by_region(df: pd.DataFrame) -> pd.DataFrame:
     return gb
 
 # population.csv 읽기
-pop_path = Path("population.csv")
+pop_path = Path("data/population.csv")   # ← 수정된 경로
 if not pop_path.exists():
-    st.error("population.csv 파일을 프로젝트 폴더에 넣어주세요.")
+    st.error("data/population.csv 파일을 확인하세요.")
     df_pop_raw = pd.DataFrame()
     df_by_region = pd.DataFrame()
 else:
-    df_pop_raw = load_population(pop_path)
+    df_pop_raw = load_population()
     df_by_region = aggregate_by_region(df_pop_raw)
+
 
 # ---------- 페이지 렌더링 ----------
 if menu == "종합":
@@ -111,3 +112,4 @@ elif menu == "데이터 설명":
         st.dataframe(df_pop_raw.head(), use_container_width=True)
         st.markdown("#### 지역구 단위 집계 데이터 (일부 미리보기)")
         st.dataframe(df_by_region.head(), use_container_width=True)
+

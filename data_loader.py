@@ -1,3 +1,6 @@
+# =============================
+# File: data_loader.py
+# =============================
 from __future__ import annotations
 
 import pandas as pd
@@ -35,10 +38,9 @@ def load_current_info(data_dir: Path) -> pd.DataFrame:
 
 def load_index_sample(data_dir: Path) -> pd.DataFrame:
     # index_sample.csv (선택적)
-    # NOTE: 지금은 프로젝트 루트(/mnt/data)에만 있을 수도 있으니 폴백
     p = data_dir / "index_sample.csv"
     if p.exists():
         return _read_csv_safe(p)
     else:
-        # Streamlit Cloud 등에서 작업 디렉토리와 업로드 디렉토리가 다를 수 있음
+        # 업로드 디렉토리 폴백
         return _read_csv_safe(Path("/mnt/data") / "index_sample.csv")

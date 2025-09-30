@@ -1,6 +1,3 @@
-# =============================
-# File: charts.py
-# =============================
 import pandas as pd
 import streamlit as st
 from metrics import compute_24_gap
@@ -33,13 +30,13 @@ def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, 
     c2v = next((c for c in ["2위득표율","2위 득표율","2nd_share"] if c in res_row.columns), None)
 
     r = res_row.iloc[0]
-    name1 = str(r[c1n]) if c1n else "1위"
-    party1 = str(r[c1p]) if c1p else ""
-    share1 = _safe_float(r[c1v]) if c1v else None
+    name1 = str(r[c1n]) if c1n and c1n in r.index else "1위"
+    party1 = str(r[c1p]) if c1p and c1p in r.index else ""
+    share1 = _safe_float(r.get(c1v), None) if c1v else None
 
-    name2 = str(r[c2n]) if c2n else "2위"
-    party2 = str(r[c2p]) if c2p else ""
-    share2 = _safe_float(r[c2v]) if c2v else None
+    name2 = str(r[c2n]) if c2n and c2n in r.index else "2위"
+    party2 = str(r[c2p]) if c2p and c2p in r.index else ""
+    share2 = _safe_float(r.get(c2v), None) if c2v else None
 
     gap = None
     if share1 is not None and share2 is not None:
@@ -52,9 +49,9 @@ def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, 
         st.markdown("**24년 총선결과**")
         col1, col2, col3 = st.columns([1.2, 1.2, 1])
         with col1:
-            st.metric(label=f"{party1} {name1}", value=_fmt_pct(share1))
+            st.metric(label=f"{party1} {name1}".strip(), value=_fmt_pct(share1))
         with col2:
-            st.metric(label=f"{party2} {name2}", value=_fmt_pct(share2))
+            st.metric(label=f"{party2} {name2}".strip(), value=_fmt_pct(share2))
         with col3:
             st.metric(label="1~2위 격차", value=_fmt_gap(gap))
 
@@ -92,15 +89,15 @@ def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
             return
 
         r = prg_row.iloc[0]
-        vote_col  = next((c for c in ["진보당_득표율","진보_득표율","progressive_share"] if c in prg_row.columns), None)
-        org_col   = next((c for c in ["당원수","조직수","branch_count"] if c in prg_row.columns), None)
-        trend_col = next((c for c in ["최근_상승폭","trend_delta"] if c in prg_row.columns), None)
+        vote_col  = next((c for c in ["진보당_득표율","진보_득표율","progressive_share","prg_share"] if c in prg_row.columns), None)
+        org_col   = next((c for c in ["당원수","조직수","branch_count","members"] if c in prg_row.columns), None)
+        trend_col = next((c for c in ["최근_상승폭","trend_delta","delta"] if c in prg_row.columns), None)
 
         c1, c2, c3 = st.columns(3)
         with c1:
             st.metric("득표력", _fmt_pct(_safe_float(r.get(vote_col), None)) if vote_col else "N/A")
         with c2:
-            st.metric("조직 규모", f"{int(r.get(org_col)):,}" if org_col and pd.notna(r.get(org_col)) else "N/A")
+            st.metric("조직 규모", f"{int(_safe_float(r.get(org_col), None)):,}" if org_col and pd.notna(r.get(org_col)) else "N/A")
         with c3:
             td = _safe_float(r.get(trend_col), None) if trend_col else None
             st.metric("최근 추세(Δ)", f"{td:+.2f}p" if isinstance(td,(int,float)) else "N/A")
@@ -116,23 +113,28 @@ def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
 
 # -------- 득표 추이 차트 --------
 def render_vote_trend_chart(ts: pd.DataFrame):
+    """
+    기대 입력형:
+      index: year(int)
+      columns: 각 성향/정당 레이블
+      values: 득표율(prop, 0~100 기준이면 그대로 표시)
+    """
     if ts is None or ts.empty:
         st.info("득표 추이 데이터가 없습니다.")
         return
 
-    # 연도 컬럼 유연 탐지
-    year_col = next((c for c in ["연도","year","년도"] if c in ts.columns), None)
-    if year_col is None:
-        st.dataframe(ts)
-        return
+    # 연도 컬럼/인덱스 정리
+    if "year" in ts.columns:
+        plot_df = ts.set_index("year")
+    elif "연도" in ts.columns:
+        plot_df = ts.set_index("연도")
+    else:
+        # 혹시 이미 피벗되어 인덱스가 연도일 수 있음
+        plot_df = ts.copy()
+        if plot_df.index.name not in ("year", "연도"):
+            st.dataframe(ts)
+            return
 
-    value_cols = [c for c in ts.columns if c not in ["코드","선거구명","지역구","district",year_col,"선거명","election"]]
-    if not value_cols:
-        st.dataframe(ts)
-        return
-
-    plot_df = ts[[year_col] + value_cols].copy()
-    plot_df = plot_df.set_index(year_col)
     st.line_chart(plot_df)
 
 # -------- 인구 정보 박스 --------

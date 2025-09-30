@@ -113,3 +113,4 @@ render_population_box(df_pop[df_pop["코드"] == sel_code])
 # 푸터
 st.write("")
 st.caption("© 2025 전략지역구 조사 · Streamlit 대시보드")
+

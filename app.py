@@ -4,15 +4,8 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
-# 내부 모듈
-from utils import (
-    load_csv_safe, parse_int, parse_float_pct, fmt_int, fmt_pct2,
-    candidates_long_from_wide, get_top3_and_gap, get_available_districts,
-    inject_pretendard, cache_data
-)
-from charts import (
-    top3_cards, results_table, incumbent_card
-)
+from utils import load_csv_safe, parse_int, parse_float_pct, fmt_int, fmt_pct2, candidates_long_from_wide, get_top3_and_gap, get_available_districts, inject_pretendard, cache_data
+from charts import top3_cards, results_table, incumbent_card
 
 # -----------------------------
 # 페이지 설정
@@ -159,10 +152,14 @@ elif menu == "지역별 분석":
     with left:
         st.markdown("##### 24년 총선결과")
         # 1-2위 격차를 결과 제목 아래에 배치(작게)
-        st.markdown(
-            f'<div class="badge"><b>1-2위 격차</b> {fmt_pct2(gap_pct, suffix="")}%p</div>',
-            unsafe_allow_html=True
-        )
+        if gap_pct is not None:
+            st.markdown(
+                f'<div class="badge"><b>1-2위 격차</b> {fmt_pct2(gap_pct, suffix="")}%p</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown('<div class="badge"><b>1-2위 격차</b> 데이터 없음</div>', unsafe_allow_html=True)
+
         top3_cards(top3_df)
         results_table(res_rows)
 

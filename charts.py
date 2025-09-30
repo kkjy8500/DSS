@@ -1,6 +1,8 @@
 # =============================
 # File: charts.py
 # =============================
+from __future__ import annotations
+
 import re
 import pandas as pd
 import streamlit as st
@@ -245,8 +247,6 @@ def render_population_box(pop_df: pd.DataFrame):
         if (has_2030_m or has_2030_f) and v2030:
             m_cnt = _to_int(r.get("2030 남성")) if has_2030_m else 0
             f_cnt = _to_int(r.get("2030 여성")) if has_2030_f else 0
-            rest = max(v2030 - (m_cnt + f_cnt), 0)
-            # 안전: 합이 2030과 다르면 남/여만으로 비율 계산
             denom = (m_cnt + f_cnt) if (m_cnt + f_cnt) > 0 else v2030
             male_share_2030 = (m_cnt / denom * 100.0) if denom else None
             female_share_2030 = (f_cnt / denom * 100.0) if denom else None
@@ -264,11 +264,9 @@ def render_population_box(pop_df: pd.DataFrame):
         # (좌) 연령 파이: 청년층/40-59/65+
         with col1:
             st.markdown("**연령 구성**")
-            # 부족한 값은 0 처리
             y = youth_pct if isinstance(youth_pct, (int, float)) and youth_pct >= 0 else 0.0
             m = mid_pct   if isinstance(mid_pct,   (int, float)) and mid_pct   >= 0 else 0.0
             e = elder_pct if isinstance(elder_pct, (int, float)) and elder_pct >= 0 else 0.0
-            # 전체 대비 합이 100을 넘거나 부족할 수 있어 정규화(보이는 합 100)
             s = y + m + e
             if s > 0:
                 y_n, m_n, e_n = y/s*100.0, m/s*100.0, e/s*100.0
@@ -277,7 +275,7 @@ def render_population_box(pop_df: pd.DataFrame):
 
             fig1, ax1 = plt.subplots()
             ax1.pie([y_n, m_n, e_n], labels=["청년층(≤39)", "40-59", "65+"], autopct="%1.1f%%", startangle=90)
-            ax1.axis("equal")  # 원형 유지
+            ax1.axis("equal")
             st.pyplot(fig1)
             plt.close(fig1)
 

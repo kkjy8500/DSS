@@ -1,21 +1,22 @@
 from __future__ import annotations
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-import re
-from functools import lru_cache
 
-# -----------------------------
-# 캐싱 데코레이터 (Streamlit v1.29+)
-# -----------------------------
+# =============================
+# 캐시 데코레이터
+# =============================
 def cache_data(func):
+    """Streamlit 캐시 래퍼(스피너 숨김)."""
     return st.cache_data(show_spinner=False)(func)
 
-# -----------------------------
+# =============================
 # 파일 로더 (UTF-8 → CP949 폴백)
-# -----------------------------
-def load_csv_safe(path: Path) -> pd.DataFrame:
+# =============================
+def load_csv_safe(path: Path | str) -> pd.DataFrame:
+    """CSV 로드: UTF-8 실패 시 CP949 폴백."""
     path = Path(path)
     if not path.exists():
         st.error(f"파일이 존재하지 않습니다: {path}")
@@ -25,27 +26,27 @@ def load_csv_safe(path: Path) -> pd.DataFrame:
     except UnicodeDecodeError:
         return pd.read_csv(path, encoding="cp949")
 
-# -----------------------------
-# 포맷/파서
-# -----------------------------
+# =============================
+# 파서 & 포맷터
+# =============================
 def parse_int(x) -> int | None:
+    """정수 파싱: '12,345' '12345.0' 등 안전 처리."""
     if pd.isna(x):
         return None
-    s = str(x).strip()
-    s = s.replace(",", "")
+    s = str(x).strip().replace(",", "")
     if s == "" or s.lower() == "nan":
         return None
     try:
+        # float→int 캐스팅도 허용
         return int(float(s))
     except Exception:
         return None
 
 def parse_float_pct(x) -> float | None:
-    """ '59.14%' or '59.14' or 59.14 -> 59.14 (float, %) """
+    """퍼센트 파싱: '59.14%'/'59.14'/59.14 → 59.14(float, %)"""
     if pd.isna(x):
         return None
-    s = str(x).strip()
-    s = s.replace("%", "").replace(",", "")
+    s = str(x).strip().replace("%", "").replace(",", "")
     if s == "" or s.lower() == "nan":
         return None
     try:
@@ -54,23 +55,25 @@ def parse_float_pct(x) -> float | None:
         return None
 
 def fmt_int(x: int | None) -> str:
+    """정수 표시: 천단위 콤마."""
     if x is None:
         return "데이터 없음"
     return f"{x:,}"
 
 def fmt_pct2(x: float | None, suffix=" %") -> str:
+    """소수점 2자리 퍼센트 표시."""
     if x is None:
         return "데이터 없음"
     return f"{x:.2f}{suffix}"
 
-# -----------------------------
+# =============================
 # 후보 Wide → Long 변환
-#  - 입력: 5_na_dis_results.csv (연도=2024로 이미 필터된 df)
-#  - 출력: 각 후보 1행씩 (이름, 득표수, 득표율, 순위)
-# -----------------------------
+#   입력: 5_na_dis_results.csv (연도=2024로 필터된 df)
+#   출력: 각 후보 1행씩 (후보/득표수/득표율/순위)
+# =============================
 def candidates_long_from_wide(df_ge_2024: pd.DataFrame) -> pd.DataFrame:
-    # 후보 1~7까지 존재 가능
     rows = []
+    # 후보 1~7까지 존재 가능
     for _, r in df_ge_2024.iterrows():
         base = {
             "지역": r.get("지역"),
@@ -84,37 +87,52 @@ def candidates_long_from_wide(df_ge_2024: pd.DataFrame) -> pd.DataFrame:
             share_col = f"후보{k}_득표율"
             if name_col in df_ge_2024.columns and pd.notna(r.get(name_col)):
                 name = str(r.get(name_col)).strip()
+
                 votes_raw = r.get(votes_col) if votes_col in df_ge_2024.columns else None
                 share_raw = r.get(share_col) if share_col in df_ge_2024.columns else None
+
                 votes = parse_int(votes_raw)
-                share = parse_float_pct(share_raw)  # 이미 % 없는 float일 수도 있음 → 안전 파서
+                share = parse_float_pct(share_raw)
+
                 rows.append({**base, "후보": name, "득표수": votes, "득표율": share, "순위": k})
+
     out = pd.DataFrame(rows)
-    # 정렬: 득표율 내림차순(동률 시 득표수, 그 다음 기존 k)
-    out = out.sort_values(["코드", out["득표율"].fillna(-1)], ascending=[True, False]).reset_index(drop=True)
+    if out.empty:
+        return out
+
+    # 안전한 숫자화 & 정렬 (결측은 뒤로)
+    out["득표율"] = pd.to_numeric(out["득표율"], errors="coerce")
+    out["득표수"] = pd.to_numeric(out["득표수"], errors="coerce")
+    if "코드" not in out.columns:
+        # 혹시라도 코드 누락 시 방어
+        out["코드"] = np.nan
+    out = out.sort_values(by=["코드", "득표율"], ascending=[True, False], na_position="last").reset_index(drop=True)
     return out
 
-# -----------------------------
-# 상위 1~3위 & 1-2위 격차 계산
-# -----------------------------
+# =============================
+# 상위 1~3위 & 1–2위 격차 계산(득표율 기준)
+# =============================
 def get_top3_and_gap(df_long_one: pd.DataFrame):
-    """한 지역(코드 필터 완료)의 long df에서 상위 3과 격차(득표율 기준)"""
+    """한 지역(코드로 이미 필터된 long df)에서 상위 3과 1-2위 격차(%p) 계산."""
     tmp = df_long_one.copy()
-    tmp = tmp.sort_values(tmp["득표율"].fillna(-1), ascending=False)
+    if tmp.empty or "득표율" not in tmp.columns:
+        return tmp.head(0), None
+
+    tmp["득표율"] = pd.to_numeric(tmp["득표율"], errors="coerce")
+    tmp = tmp.sort_values(by="득표율", ascending=False, na_position="last")
     top3 = tmp.head(3).copy()
-    # 1-2위 격차(%p)
+
+    gap = None
     if len(tmp) >= 2 and pd.notna(tmp.iloc[0]["득표율"]) and pd.notna(tmp.iloc[1]["득표율"]):
         gap = float(tmp.iloc[0]["득표율"]) - float(tmp.iloc[1]["득표율"])
-    else:
-        gap = None
     return top3, gap
 
-# -----------------------------
+# =============================
 # 교집합 지역 목록 (코드, 선거구)
-# -----------------------------
+# =============================
 def get_available_districts(df_comp: pd.DataFrame, df_ge: pd.DataFrame, df_inc: pd.DataFrame):
+    """세 데이터셋 모두에 존재하는 지역만 반환: List[(코드, 선거구명)]."""
     codes = set(df_comp["코드"]).intersection(set(df_ge["코드"])).intersection(set(df_inc["코드"]))
-    # 이름은 우선 comp 기준, 없으면 ge→inc 순으로 확보
     out = []
     for c in sorted(codes):
         name = None
@@ -126,10 +144,11 @@ def get_available_districts(df_comp: pd.DataFrame, df_ge: pd.DataFrame, df_inc: 
         out.append((c, name if name else str(c)))
     return out
 
-# -----------------------------
-# 스타일 / 폰트
-# -----------------------------
+# =============================
+# 스타일 / 폰트 인젝션
+# =============================
 def inject_pretendard():
+    """Pretendard 웹폰트 + 카드/배지 기본 스타일."""
     st.markdown(
         """
         <style>
@@ -144,7 +163,8 @@ def inject_pretendard():
           font-weight: 700; font-style: normal; font-display: swap;
         }
         html, body, [class*="css"] {
-          font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif !important;
+          font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR',
+                       'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif !important;
         }
         .metric-card {border:1px solid #eee; border-radius:16px; padding:16px; background:#fff;}
         .badge {display:inline-block; padding:2px 8px; border-radius:999px; background:#f2f4f8; color:#555; font-size:12px; margin-right:6px;}
@@ -154,5 +174,6 @@ def inject_pretendard():
         unsafe_allow_html=True
     )
 
-def badge(title, text):
+def badge(title: str, text: str) -> str:
+    """캡션에 붙일 라운드 배지 HTML 문자열 반환."""
     return f'<span class="badge"><b>{title}</b> {text}</span>'

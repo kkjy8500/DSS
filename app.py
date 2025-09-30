@@ -39,7 +39,7 @@ DATA_DIR = Path("data")
 # -----------------------------
 # 코드 컬럼 표준화 유틸
 # -----------------------------
-CODE_CANDIDATES = ["코드", "code", "CODE", "선거구코드", "지역코드"]
+CODE_CANDIDATES = ["코드", "code", "CODE", "선거구코드", "지역코드", "지역구코드"]
 
 def ensure_code_col(df: pd.DataFrame, src_name: str = "df") -> pd.DataFrame:
     """여러 형태로 들어올 수 있는 코드 컬럼을 '코드'(str)로 표준화."""
@@ -92,14 +92,20 @@ df_idx   = ensure_code_col(df_idx,   "df_idx")
 
 # 가용 지역 목록(코드/이름)
 NAME_CANDIDATES = ["선거구명", "지역구", "지역명", "district", "지역구명"]
-
 name_col = next((c for c in NAME_CANDIDATES if c in df_pop.columns), None)
 if not name_col:
-    st.error(f"df_pop에 지역명을 나타내는 컬럼이 없습니다. 후보={NAME_CANDIDATES}")
+    st.error(f"df_pop에 지역명을 나타내는 컬럼이 없습니다. 후보={NAME_CANDIDATES} · 실제={df_pop.columns.tolist()}")
+    st.stop()
+
+# 코드 컬럼 찾기 (ensure_code_col 이전 데이터 대비도 포함)
+code_col = "코드" if "코드" in df_pop.columns else next((c for c in CODE_CANDIDATES if c in df_pop.columns), None)
+if not code_col:
+    st.error(f"df_pop에 코드 컬럼이 없습니다. 후보={CODE_CANDIDATES} · 실제={df_pop.columns.tolist()}")
     st.stop()
 
 regions = (
-    df_pop[["코드", name_col]]
+    df_pop[[code_col, name_col]]
+    .rename(columns={code_col: "코드"})
     .drop_duplicates()
     .sort_values(name_col)
 )
@@ -115,6 +121,7 @@ if regions.empty:
     st.stop()
 
 sel_code = regions.loc[regions[name_col] == sel_label, "코드"].iloc[0]
+
 
 # -----------------------------
 # 상단 레이아웃: 좌(24년 결과) — 우(현직정보)

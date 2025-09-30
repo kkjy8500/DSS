@@ -15,6 +15,7 @@ from charts import (
 )
 
 # -----------------------------
+# 페이지 설정 (한 번만)
 # 페이지 설정
 # -----------------------------
 st.set_page_config(
@@ -23,6 +24,7 @@ st.set_page_config(
     layout="wide",
 )
 
+inject_pretendard()  # 예쁜 폰트 적용
 inject_pretendard()
 
 # -----------------------------
@@ -63,7 +65,7 @@ for need, df, name in [
 ]:
     missing = need - set(df.columns)
     if missing:
-        st.error(f"❌ {name}에 필요한 열이 없습니다: {sorted(missing)}")
+        st.error(f"❌ `{name}`에 필요한 열이 없습니다: {sorted(missing)}")
         st.stop()
 
 # 교집합 지역 목록 (코드, 선거구)
@@ -79,6 +81,8 @@ st.sidebar.header("메뉴 선택")
 menu = st.sidebar.radio("페이지", ["종합", "지역별 분석", "데이터 설명"], index=0)
 
 # 데이터 기반 지역 목록
+opt_labels = [f"{name} ({code})" for code, name in district_opts]
+opt_map = {f"{name} ({code})": (code, name) for code, name in district_opts}
 opt_labels = [name for code, name in district_opts]
 opt_map = {name: (code, name) for code, name in district_opts}
 choice = st.sidebar.selectbox("지역을 선택하세요", opt_labels, index=0)
@@ -86,6 +90,7 @@ sel_code, sel_name = opt_map[choice]
 
 
 # -----------------------------
+# 공통 전처리 (24년 총선 결과, long 형태)
 # 공통 전처리 (24년 총선 결과)
 # -----------------------------
 df_ge_2024 = df_ge[df_ge["연도"].astype(str) == "2024"].copy()
@@ -109,6 +114,16 @@ if menu == "종합":
     with c3:
         st.metric("표시 기준", "정치지형1·24총선·현직")
 
+    st.write("---")
+    st.markdown("#### 데이터 소스")
+    st.markdown(
+        "- **정치지형1**: 진보당 당원수(명), 진보당 지방선거 후보(명, 기준: 2022)  \n"
+        "  └ 파일: `(sample)party_competence.csv`\n"
+        "- **24년 총선결과**: 상위 1~3위 카드 + 전체 표  \n"
+        "  └ 파일: `5_na_dis_results.csv`\n"
+        "- **현직정보**: 이름, 정당, 성별, 연령, 선수, KPI(24년 득표율 / 1-2위 격차), 인물경쟁력, 재출마가능성  \n"
+        "  └ 파일: `current_info.csv`"
+    )
 
     st.write("---")
     st.markdown("#### 바로 가기")
@@ -145,6 +160,10 @@ elif menu == "지역별 분석":
         value2=fmt_int(jinbo_cands) if jinbo_cands is not None else "데이터 없음",
         title3="1-2위 격차(%p, 2024)",
         value3=fmt_pct2(gap_pct, suffix=""),
+    )
+    st.caption(
+        badge("출처", "(sample)party_competence.csv / 5_na_dis_results.csv (연도=2024)") +
+        " " + badge("표시", "절대값, 득표율 소수점 2자리")
     )
 
     # 24년 총선결과

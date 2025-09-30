@@ -152,7 +152,6 @@ def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
         if cand_col and pd.notna(r.get(cand_col)):
             st.caption(f"지방선거 후보 수: {_to_int(r.get(cand_col)):,}명")
 
-        # 인구 맥락 간단 표시(세부는 아래 인구 박스에서 파이차트로)
         if pop_row is not None and not pop_row.empty:
             rp = pop_row.iloc[0]
             elder_col = next((c for c in ["고령층비율", "65세이상비율", "age65p"] if c in pop_row.columns), None)
@@ -180,16 +179,15 @@ def render_vote_trend_chart(ts: pd.DataFrame):
         plot_df = plot_df.set_index("year")
     elif "연도" in plot_df.columns:
         plot_df = plot_df.set_index("연도")
-    # 이미 연도가 인덱스인 피벗 형태면 그대로 사용
 
-    # 성향 컬럼만 남기기 (코드/지역명/선거명 제거)
-    drop_cands = {"코드", "선거구명", "지역구", "district", "선거명", "election"}
-    value_cols = [c for c in plot_df.columns if c not in drop_cands]
-    if not value_cols:
+    # 성향 컬럼만 + 숫자형만 그리기 (안전)
+    drop_cands = {"코드", "선거구명", "지역구", "district", "선거명", "election", "label", "party_label"}
+    numeric_cols = [c for c in plot_df.columns if c not in drop_cands and pd.api.types.is_numeric_dtype(plot_df[c])]
+    if not numeric_cols:
         st.dataframe(ts)
         return
 
-    st.line_chart(plot_df[value_cols])
+    st.line_chart(plot_df[numeric_cols])
 
 
 # -------- 인구 정보 박스 (메트릭 + 파이차트 2개) --------
@@ -251,7 +249,6 @@ def render_population_box(pop_df: pd.DataFrame):
             male_share_2030 = (m_cnt / denom * 100.0) if denom else None
             female_share_2030 = (f_cnt / denom * 100.0) if denom else None
         else:
-            # 비율 컬럼이 있으면 그것 사용
             male_share_2030 = male_pct
             female_share_2030 = female_pct
 

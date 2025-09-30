@@ -45,15 +45,20 @@ def _fmt_pct(x):
 def _fmt_gap(x):
     return f"{x:.2f}p" if isinstance(x, (int, float)) else "N/A"
 
+def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or len(df) == 0:
+        return pd.DataFrame() if df is None else df
+    out = df.copy()
+    out.columns = [str(c).strip().replace("\n", "").replace("\r", "") for c in out.columns]
+    return out
+
 # -------- 내부: 파이차트 생성 (Altair) --------
 def _pie_chart(title: str, labels: list[str], values: list[float], width: int = 260, height: int = 260):
-    # NaN/None → 0 처리 및 음수 컷
     vals = [(v if isinstance(v, (int, float)) and v > 0 else 0.0) for v in values]
     total = sum(vals)
     if total <= 0:
         st.info(f"{title} 자료가 없습니다.")
         return
-    # 비율 정규화 (합 100)
     vals = [v / total * 100.0 for v in vals]
     df = pd.DataFrame({"구성": labels, "비율": vals})
     chart = (
@@ -70,29 +75,39 @@ def _pie_chart(title: str, labels: list[str], values: list[float], width: int = 
 
 # -------- 24년 결과 카드 --------
 def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, code: str = None):
+    # 여러 연도 행이 들어오므로, 2024가 있으면 2024, 없으면 최댓값 연도를 선택
     if res_row is None or res_row.empty:
         st.info("해당 선거구의 24년 결과 데이터가 없습니다.")
         return
 
-    c1n = next((c for c in ["1위이름", "1위 후보", "1위_이름", "1st_name"] if c in res_row.columns), None)
-    c1p = next((c for c in ["1위정당", "1위 정당", "1st_party"] if c in res_row.columns), None)
-    c1v = next((c for c in ["1위득표율", "1위 득표율", "1st_share", "1위득표율(%)"] if c in res_row.columns), None)
+    res_row = _norm_cols(res_row)
+    if "연도" in res_row.columns:
+        try:
+            # 2024 우선, 없으면 최신 연도
+            cands = res_row.dropna(subset=["연도"]).copy()
+            cands["__year__"] = pd.to_numeric(cands["연도"], errors="coerce")
+            if (cands["__year__"] == 2024).any():
+                r = cands[cands["__year__"] == 2024].iloc[0]
+            else:
+                r = cands.loc[cands["__year__"].idxmax()]
+        except Exception:
+            r = res_row.iloc[0]
+    else:
+        r = res_row.iloc[0]
 
-    c2n = next((c for c in ["2위이름", "2위 후보", "2위_이름", "2nd_name"] if c in res_row.columns), None)
-    c2p = next((c for c in ["2위정당", "2위 정당", "2nd_party"] if c in res_row.columns), None)
-    c2v = next((c for c in ["2위득표율", "2위 득표율", "2nd_share", "2위득표율(%)"] if c in res_row.columns), None)
+    # 이 데이터셋은 '후보1_이름/후보1_득표율/후보2_...' 형식
+    c1n = next((c for c in ["후보1_이름", "1위이름", "1위 후보", "1위_이름", "1st_name"] if c in res_row.columns), None)
+    c1v = next((c for c in ["후보1_득표율", "1위득표율", "1위 득표율", "1st_share", "1위득표율(%)"] if c in res_row.columns), None)
+    c2n = next((c for c in ["후보2_이름", "2위이름", "2위 후보", "2위_이름", "2nd_name"] if c in res_row.columns), None)
+    c2v = next((c for c in ["후보2_득표율", "2위득표율", "2위 득표율", "2nd_share", "2위득표율(%)"] if c in res_row.columns), None)
 
-    r = res_row.iloc[0]
     name1 = str(r.get(c1n)) if c1n else "1위"
-    party1 = str(r.get(c1p)) if c1p else ""
     share1 = _to_pct_float(r.get(c1v))
-
     name2 = str(r.get(c2n)) if c2n else "2위"
-    party2 = str(r.get(c2p)) if c2p else ""
     share2 = _to_pct_float(r.get(c2v))
 
     gap = None
-    if share1 is not None and share2 is not None:
+    if isinstance(share1, (int, float)) and isinstance(share2, (int, float)):
         gap = round(share1 - share2, 2)
     elif df_24 is not None and code is not None:
         gap = compute_24_gap(df_24, code)
@@ -102,9 +117,9 @@ def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, 
         st.markdown("**24년 총선결과**")
         col1, col2, col3 = st.columns([1.2, 1.2, 1])
         with col1:
-            st.metric(label=f"{(party1 + ' ' + name1).strip()}", value=_fmt_pct(share1))
+            st.metric(label=f"{name1}", value=_fmt_pct(share1))
         with col2:
-            st.metric(label=f"{(party2 + ' ' + name2).strip()}", value=_fmt_pct(share2))
+            st.metric(label=f"{name2}", value=_fmt_pct(share2))
         with col3:
             st.metric(label="1~2위 격차", value=_fmt_gap(gap))
 
@@ -114,6 +129,7 @@ def render_incumbent_card(cur_row: pd.DataFrame):
         st.info("현직 정보 데이터가 없습니다.")
         return
 
+    cur_row = _norm_cols(cur_row)
     r = cur_row.iloc[0]
     name_col   = next((c for c in ["의원명", "이름", "성명", "incumbent_name"] if c in cur_row.columns), None)
     party_col  = next((c for c in ["정당", "소속정당", "party"] if c in cur_row.columns), None)
@@ -141,35 +157,27 @@ def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
             st.info("진보당 관련 데이터가 없습니다.")
             return
 
+        prg_row = _norm_cols(prg_row)
         r = prg_row.iloc[0]
-        vote_col = next((c for c in [
-            "진보당_득표율", "진보_득표율", "progressive_share", "prg_share", "진보당 득표율", "득표력", "득표율"
-        ] if c in prg_row.columns), None)
 
-        org_col = next((c for c in [
-            "진보당 당원수", "당원수", "조직수", "branch_count", "members"
-        ] if c in prg_row.columns), None)
-        cand_col = next((c for c in [
-            "진보당 지방선거후보", "지방선거후보수", "local_candidates"
-        ] if c in prg_row.columns), None)
-
-        trend_col = next((c for c in [
-            "최근_상승폭", "trend_delta", "delta", "최근추세", "최근 추세", "증감", "증감폭"
-        ] if c in prg_row.columns), None)
+        # 이 파일((sample)party_competence.csv)은 득표력이 없고, 조직/후보만 제공
+        org_col = next((c for c in ["진보당 당원수", "당원수", "조직수", "branch_count", "members"] if c in prg_row.columns), None)
+        cand_col = next((c for c in ["진보당 지방선거후보", "지방선거후보수", "local_candidates"] if c in prg_row.columns), None)
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("득표력", _fmt_pct(_to_pct_float(r.get(vote_col))) if vote_col else "N/A")
+            st.metric("득표력", "지표 미제공")  # 이 데이터셋에는 득표력 컬럼이 없음
         with c2:
             st.metric("조직 규모", f"{_to_int(r.get(org_col)):,}" if org_col and pd.notna(r.get(org_col)) else "N/A")
         with c3:
-            td = _to_pct_float(r.get(trend_col))
-            st.metric("최근 추세(Δ)", f"{td:+.2f}p" if isinstance(td, (int, float)) else "N/A")
+            st.metric("최근 추세(Δ)", "지표 미제공")
 
         if cand_col and pd.notna(r.get(cand_col)):
             st.caption(f"지방선거 후보 수: {_to_int(r.get(cand_col)):,}명")
 
+        # 인구 맥락 간단 표시(세부는 아래 인구 박스에서 파이차트로)
         if pop_row is not None and not pop_row.empty:
+            pop_row = _norm_cols(pop_row)
             rp = pop_row.iloc[0]
             elder_col = next((c for c in ["고령층비율", "65세이상비율", "age65p"] if c in pop_row.columns), None)
             youth_col = next((c for c in ["청년층비율", "39세이하비율", "age39m"] if c in pop_row.columns), None)
@@ -180,17 +188,11 @@ def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
 
 # -------- 득표 추이 차트 --------
 def render_vote_trend_chart(ts: pd.DataFrame):
-    """
-    기대 입력형:
-      index: year(int) 혹은 'year' 컬럼
-      columns: 각 성향/정당 레이블
-      values: 득표율 (0~100 기준)
-    """
     if ts is None or ts.empty:
         st.info("득표 추이 데이터가 없습니다.")
         return
 
-    plot_df = ts.copy()
+    plot_df = _norm_cols(ts.copy())
     if "year" in plot_df.columns:
         plot_df = plot_df.set_index("year")
     elif "연도" in plot_df.columns:
@@ -214,6 +216,7 @@ def render_population_box(pop_df: pd.DataFrame):
             st.info("인구 데이터가 없습니다.")
             return
 
+        pop_df = _norm_cols(pop_df)
         r = pop_df.iloc[0]
 
         # 1) 비율 컬럼 우선 사용
@@ -272,18 +275,16 @@ def render_population_box(pop_df: pd.DataFrame):
         # --- 파이차트 2개 (연령, 2030 남/여) ---
         col1, col2 = st.columns(2)
 
-        # (좌) 연령 파이
         y = youth_pct if isinstance(youth_pct, (int, float)) and youth_pct >= 0 else 0.0
         m = mid_pct   if isinstance(mid_pct,   (int, float)) and mid_pct   >= 0 else 0.0
         e = elder_pct if isinstance(elder_pct, (int, float)) and elder_pct >= 0 else 0.0
-        _pie_chart("연령 구성", ["청년층(≤39)", "40-59", "65+"], [y, m, e])
+        with col1:
+            _pie_chart("연령 구성", ["청년층(≤39)", "40-59", "65+"], [y, m, e])
 
-        # (우) 2030 남/여 파이
         mm = male_share_2030 if isinstance(male_share_2030, (int, float)) and male_share_2030 >= 0 else None
         ff = female_share_2030 if isinstance(female_share_2030, (int, float)) and female_share_2030 >= 0 else None
-        if mm is None and ff is None:
-            with col2:
+        with col2:
+            if mm is None and ff is None:
                 st.info("2030 남/여 자료가 없습니다.")
-        else:
-            with col2:
+            else:
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm or 0.0, ff or 0.0])

@@ -1,3 +1,6 @@
+# =============================
+# File: metrics.py
+# =============================
 from __future__ import annotations
 
 import re
@@ -6,7 +9,32 @@ import pandas as pd
 
 # 내부적으로도 컬럼 후보를 사용
 _CODE_CANDIDATES = ["코드", "지역구코드", "선거구코드", "지역코드", "code", "CODE"]
-_NAME_CANDIDATES = ["지역구","선거구명","지역명","district","지역구명","region","지역"]
+_NAME_CANDIDATES = ["지역구","선거구","선거구명","지역명","district","지역구명","region","지역"]
+
+def _canon_code(x: object) -> str:
+    s = str(x).strip()
+    s = re.sub(r"[^0-9A-Za-z]", "", s)
+    s = s.lstrip("0")
+    return s.lower()
+
+def _pct_float(v) -> float | None:
+    """
+    다양한 득표율 표기를 0~100 스케일로 변환:
+    - '45.2%' -> 45.2
+    - '45,2'  -> 45.2
+    - 0.452   -> 45.2 (<=1이면 100배)
+    - ' 45.2 % ' -> 45.2
+    """
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    s = str(v).strip().replace(",", "")
+    m = re.match(r"^\s*([+-]?\d+(\.\d+)?)\s*%?\s*$", s)
+    if not m:
+        return None
+    x = float(m.group(1))
+    if "%" in s:
+        return x
+    return x * 100.0 if 0 <= x <= 1 else x
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or len(df) == 0:
@@ -35,8 +63,10 @@ def _get_by_code_local(df: pd.DataFrame, code: str) -> pd.DataFrame:
     col = "코드" if "코드" in df2.columns else _detect_code_col(df2)
     if not col:
         return pd.DataFrame()
+    key = _canon_code(code)
     try:
-        return df2[df2[col].astype(str) == str(code)]
+        sub = df2[df2[col].astype(str).map(_canon_code) == key]
+        return sub if len(sub) else pd.DataFrame()
     except Exception:
         return pd.DataFrame()
 
@@ -100,18 +130,38 @@ def compute_trend_series(df_trend: pd.DataFrame, code: str) -> pd.DataFrame:
         return sub
 
 def compute_24_gap(df_24: pd.DataFrame, code: str) -> float | None:
-    """2024 총선에서 1위-2위 득표율 격차를 계산 (가능할 때만)."""
+    """
+    1~2위 득표율 격차(단위 p). 다양한 열/표기(%, 소수) 자동 인식.
+    """
     try:
         row24 = _get_by_code_local(df_24, code)
-        if not row24.empty:
-            c1v = next((c for c in ["1위득표율","1위 득표율","1st_share"] if c in row24.columns), None)
-            c2v = next((c for c in ["2위득표율","2위 득표율","2nd_share"] if c in row24.columns), None)
-            if c1v and c2v:
-                gap = float(row24.iloc[0][c1v]) - float(row24.iloc[0][c2v])
-                return round(gap, 2)
+        if row24.empty:
+            return None
+
+        # 우선 후보군
+        c1v = next((c for c in ["1위득표율","1위 득표율","1st_share","득표율_1위","1위득표율(%)"] if c in row24.columns), None)
+        c2v = next((c for c in ["2위득표율","2위 득표율","2nd_share","득표율_2위","2위득표율(%)"] if c in row24.columns), None)
+
+        # 정규식 백업
+        if not c1v:
+            cands = [c for c in row24.columns if isinstance(c, str)]
+            one_like = [c for c in cands if re.search(r"1.*득표|득표.*1", c)]
+            c1v = one_like[0] if one_like else None
+        if not c2v:
+            cands = [c for c in row24.columns if isinstance(c, str)]
+            two_like = [c for c in cands if re.search(r"2.*득표|득표.*2", c)]
+            c2v = two_like[0] if two_like else None
+
+        if not (c1v and c2v):
+            return None
+
+        v1 = _pct_float(row24.iloc[0][c1v])
+        v2 = _pct_float(row24.iloc[0][c2v])
+        if v1 is None or v2 is None:
+            return None
+        return round(v1 - v2, 2)
     except Exception:
-        pass
-    return None
+        return None
 
 def compute_summary_metrics(
     df_trend: pd.DataFrame,

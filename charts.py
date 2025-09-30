@@ -1,28 +1,19 @@
 # charts.py
 from __future__ import annotations
 import pandas as pd
-
-from pathlib import Path
-
-def load_population() -> pd.DataFrame:
-    path = Path("data/population.csv")
-    df = pd.read_csv(path)
-    return df
-
 import altair as alt
 import streamlit as st
 
 # ===== 파이차트: 2030 / 4050 / 65세 이상 =====
 def pie_age_buckets(row: pd.Series) -> None:
     needed = ["2030", "4050", "65세 이상"]
-    present = [c for c in needed if c in row.index]
-    if len(present) < 3:
-        st.info("파이차트(연령대)용 컬럼(2030, 4050, 65세 이상)이 필요합니다.")
+    if not all(c in row.index for c in needed):
+        st.warning("⚠️ population.csv에 2030, 4050, 65세 이상 컬럼이 필요합니다.")
         return
 
     df = pd.DataFrame({
-        "구성": ["2030", "4050", "65세 이상"],
-        "인원": [float(row["2030"]), float(row["4050"]), float(row["65세 이상"])]
+        "구성": needed,
+        "인원": [float(row[c]) for c in needed]
     })
     chart = (
         alt.Chart(df)
@@ -39,14 +30,13 @@ def pie_age_buckets(row: pd.Series) -> None:
 # ===== 파이차트: 2030 남성 / 2030 여성 =====
 def pie_2030_gender(row: pd.Series) -> None:
     needed = ["2030 남성", "2030 여성"]
-    present = [c for c in needed if c in row.index]
-    if len(present) < 2:
-        st.info("파이차트(성별)용 컬럼(2030 남성, 2030 여성)이 필요합니다.")
+    if not all(c in row.index for c in needed):
+        st.warning("⚠️ population.csv에 2030 남성, 2030 여성 컬럼이 필요합니다.")
         return
 
     df = pd.DataFrame({
-        "구성": ["2030 남성", "2030 여성"],
-        "인원": [float(row["2030 남성"]), float(row["2030 여성"])]
+        "구성": needed,
+        "인원": [float(row[c]) for c in needed]
     })
     chart = (
         alt.Chart(df)
@@ -62,13 +52,9 @@ def pie_2030_gender(row: pd.Series) -> None:
 
 # ===== 막대차트: 10개 지역 2030 1인가구 (선택 지역 강조) =====
 def bar_2030_single_household(df_by_region: pd.DataFrame, selected_region: str) -> None:
-    """
-    df_by_region: 지역구 단위로 집계된 DF (index 또는 컬럼에 '지역구' 있어야 함)
-    필요한 컬럼: '지역구', '2030 1인가구'
-    """
     for col in ["지역구", "2030 1인가구"]:
         if col not in df_by_region.columns:
-            st.info("막대차트용 컬럼(지역구, 2030 1인가구)이 필요합니다.")
+            st.warning("⚠️ population.csv에 '지역구', '2030 1인가구' 컬럼이 필요합니다.")
             return
 
     base = df_by_region.copy()
@@ -82,12 +68,11 @@ def bar_2030_single_household(df_by_region: pd.DataFrame, selected_region: str) 
             y=alt.Y("지역구:N", sort="-x", title="지역구"),
             color=alt.condition(
                 alt.datum.선택, 
-                alt.value("#1f77b4"),     # 선택 지역 (기본 팔레트 중 하나)
-                alt.value("#d3d3d3")      # 그 외 지역 (회색)
+                alt.value("#1f77b4"),  # 선택 지역
+                alt.value("#d3d3d3")   # 다른 지역
             ),
             tooltip=["지역구", "2030 1인가구"]
         )
         .properties(height=360)
     )
     st.altair_chart(chart, use_container_width=True)
-

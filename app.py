@@ -32,7 +32,7 @@ from charts import (
 )
 
 # -----------------------------
-# Page Config (요청 사양)
+# Page Config
 # -----------------------------
 st.set_page_config(
     page_title="지역구 선정 1단계 조사 결과 대시보드",
@@ -137,7 +137,6 @@ def build_regions(primary_df: pd.DataFrame, *fallback_dfs: pd.DataFrame) -> pd.D
 
     name_col = _detect_col(dfp, NAME_CANDIDATES)
     if not name_col:
-        # 그래도 region 같은 이름이 없으면 코드만 라벨로 보여준다
         return (
             dfp.loc[:, ["코드"]]
                .assign(라벨=dfp["코드"])
@@ -148,7 +147,6 @@ def build_regions(primary_df: pd.DataFrame, *fallback_dfs: pd.DataFrame) -> pd.D
 
     sido_col = _detect_col(dfp, SIDO_CANDIDATES)
 
-    # 라벨 생성: '서울 강서구병' 형태 보장
     def _label(row):
         nm = str(row[name_col]).strip()
         if sido_col and sido_col in row.index and pd.notna(row[sido_col]):
@@ -190,7 +188,6 @@ df_idx   = ensure_code_col(df_idx)
 if menu == "종합":
     c1, c2, c3 = st.columns(3)
     with c1:
-        # trend 우선, 없으면 pop
         n_regions = 0
         if "코드" in df_trend.columns and len(df_trend) > 0:
             n_regions = df_trend["코드"].astype(str).map(_canon_code).nunique()
@@ -203,7 +200,6 @@ if menu == "종합":
         st.metric("최근 파일 로드 상태", "OK" if any(len(x) > 0 for x in [df_pop, df_24, df_curr, df_trend]) else "확인 필요")
 
     st.divider()
-    # 시/도 분포 (있으면)
     base_for_sido = _first_nonempty(df_pop, df_trend, df_24, df_curr)
     if base_for_sido is not None:
         base_for_sido = _normalize_columns(base_for_sido)
@@ -225,7 +221,6 @@ if menu == "종합":
 # Page: 지역별 분석
 # -----------------------------
 elif menu == "지역별 분석":
-    # population이 없어도 trend/24/curr에서 폴백
     regions = build_regions(df_pop, df_trend, df_24, df_curr)
     if regions.empty:
         st.error("지역 목록을 만들 수 없습니다. (어느 데이터셋에도 '코드' 및 지역명 컬럼이 없음)")
@@ -235,7 +230,6 @@ elif menu == "지역별 분석":
     sel_label = st.sidebar.selectbox("선거구를 선택하세요", regions["라벨"].tolist())
     sel_code = regions.loc[regions["라벨"] == sel_label, "코드"].iloc[0]
 
-    # 상단: 좌(24년 결과) — 우(현직정보)
     col_left, col_right = st.columns([1.2, 1])
     with col_left:
         st.subheader("24년 총선결과")
@@ -248,7 +242,6 @@ elif menu == "지역별 분석":
 
     st.divider()
 
-    # 중단: 진보당 현황 + 정당성향별 득표추이
     col_a, col_b = st.columns([0.9, 1.1])
     with col_a:
         st.subheader("진보당 현황")
@@ -257,11 +250,9 @@ elif menu == "지역별 분석":
         render_prg_party_box(prg_row, pop_row)
     with col_b:
         st.subheader("정당성향별 득표추이")
-        # 여기서 시계열 피벗/연도 파싱까지 처리
         ts = compute_trend_series(df_trend, sel_code)
         render_vote_trend_chart(ts)
 
-    # 요약지표 (유동성/경합도/진보득표력)
     summary = compute_summary_metrics(df_trend, df_24, df_idx, sel_code)
     prg_val = summary.get("PL_prg_str")
     gap_val = summary.get("PL_gap_B")
@@ -272,8 +263,6 @@ elif menu == "지역별 분석":
     st.caption(f"요약지표 · 진보정당득표력: {prg_text} · 유동성B: {swing_txt} · 경합도B: {gap_text}")
 
     st.divider()
-
-    # 하단: 인구 정보
     st.subheader("인구 정보")
     render_population_box(get_by_code(df_pop, sel_code))
 

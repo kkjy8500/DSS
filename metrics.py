@@ -1,13 +1,12 @@
-# =============================
-# File: metrics.py
-# =============================
 from __future__ import annotations
 
+import re
 import numpy as np
 import pandas as pd
 
 # 내부적으로도 컬럼 후보를 사용
 _CODE_CANDIDATES = ["코드", "지역구코드", "선거구코드", "지역코드", "code", "CODE"]
+_NAME_CANDIDATES = ["지역구","선거구명","지역명","district","지역구명","region","지역"]
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or len(df) == 0:
@@ -16,15 +15,18 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df2.columns = [str(c).strip().replace("\n", "").replace("\r", "") for c in df2.columns]
     return df2
 
-def _detect_code_col(df: pd.DataFrame) -> str or None:
-    for c in _CODE_CANDIDATES:
+def _detect_col(df: pd.DataFrame, candidates: list) -> str | None:
+    for c in candidates:
         if c in df.columns:
             return c
     cols = [str(c).strip().replace("\n", "").replace("\r", "") for c in df.columns]
-    for cand in _CODE_CANDIDATES:
+    for cand in candidates:
         if cand in cols:
             return df.columns[cols.index(cand)]
     return None
+
+def _detect_code_col(df: pd.DataFrame) -> str | None:
+    return _detect_col(df, _CODE_CANDIDATES)
 
 def _get_by_code_local(df: pd.DataFrame, code: str) -> pd.DataFrame:
     if df is None or len(df) == 0:
@@ -38,16 +40,70 @@ def _get_by_code_local(df: pd.DataFrame, code: str) -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
 
-def compute_trend_series(df_trend: pd.DataFrame, code: str) -> pd.DataFrame:
-    """주어진 선거구(code)에 대한 정당성향별 득표 추이 시계열을 반환."""
-    return _get_by_code_local(df_trend, code)
+def _extract_year_from_election(election: str) -> int | None:
+    """
+    '2016_na_pro' 같은 문자열에서 앞의 4자리 연도 추출.
+    """
+    if not isinstance(election, str):
+        return None
+    m = re.match(r"^(\d{4})", election.strip())
+    if m:
+        try:
+            return int(m.group(1))
+        except Exception:
+            return None
+    return None
 
-def compute_24_gap(df_24: pd.DataFrame, code: str) -> float or None:
+def compute_trend_series(df_trend: pd.DataFrame, code: str) -> pd.DataFrame:
+    """
+    주어진 선거구(code)에 대한 정당성향별 득표 추이 시계열(피벗 완료)을 반환.
+    기대 반환:
+      columns: 각 성향(예: 민주, 보수, 진보, 기타)
+      index/col: year(int) / 'year' 컬럼으로도 포함
+    입력 df_trend의 최소 요구 컬럼: ['code' or '코드', 'election' or '연도', 'label' and 'prop']
+    """
+    sub = _get_by_code_local(df_trend, code)
+    if sub.empty:
+        return pd.DataFrame()
+
+    sub = _normalize_columns(sub)
+
+    # 컬럼 탐지
+    election_col = "election" if "election" in sub.columns else ("연도" if "연도" in sub.columns else None)
+    label_col    = "label" if "label" in sub.columns else _detect_col(sub, ["성향","정당성향","party_label"])
+    value_col    = "prop"  if "prop"  in sub.columns else _detect_col(sub, ["득표율","비율","share","ratio","pct"])
+
+    if not label_col or not value_col:
+        # 최소 요건 불충족 시 원본 반환 (차트 쪽에서 테이블로 표출)
+        return sub
+
+    # 연도 파싱
+    if election_col == "election":
+        sub["year"] = sub["election"].apply(_extract_year_from_election)
+    elif election_col == "연도":
+        # 이미 연도라면 표준화
+        sub["year"] = pd.to_numeric(sub["연도"], errors="coerce")
+    else:
+        sub["year"] = pd.NA
+
+    # 피벗 (연도 x label -> prop)
+    try:
+        piv = (
+            sub.dropna(subset=["year"])
+               .pivot_table(index="year", columns=label_col, values=value_col, aggfunc="mean")
+               .sort_index()
+        )
+        piv = piv.reset_index()  # 'year' 컬럼 보유
+        return piv
+    except Exception:
+        # 피벗 실패 시 원본 반환
+        return sub
+
+def compute_24_gap(df_24: pd.DataFrame, code: str) -> float | None:
     """2024 총선에서 1위-2위 득표율 격차를 계산 (가능할 때만)."""
     try:
         row24 = _get_by_code_local(df_24, code)
         if not row24.empty:
-            # 후보 컬럼명 유연 인식
             c1v = next((c for c in ["1위득표율","1위 득표율","1st_share"] if c in row24.columns), None)
             c2v = next((c for c in ["2위득표율","2위 득표율","2nd_share"] if c in row24.columns), None)
             if c1v and c2v:
@@ -75,7 +131,6 @@ def compute_summary_metrics(
         "PL_gap_B": np.nan,
     }
 
-    # 외부 지표가 없거나 코드 매칭 실패 시 24년 격차로 대체
     sub = _get_by_code_local(df_idx, code)
     if sub is None or sub.empty:
         gap = compute_24_gap(df_24, code)
@@ -85,7 +140,6 @@ def compute_summary_metrics(
 
     row = sub.iloc[0]
 
-    # 외부 지표 필드 사용 (있을 때만)
     if "PL_prg_str" in row.index:
         try:
             out["PL_prg_str"] = float(row["PL_prg_str"])
@@ -102,12 +156,10 @@ def compute_summary_metrics(
         try:
             out["PL_gap_B"] = float(row["PL_gap_B"])
         except Exception:
-            # 외부 값 파싱 실패 시 24년 격차로 보조
             gap = compute_24_gap(df_24, code)
             if gap is not None:
                 out["PL_gap_B"] = gap
     else:
-        # 필드 자체가 없으면 24년 격차 보조
         gap = compute_24_gap(df_24, code)
         if gap is not None:
             out["PL_gap_B"] = gap

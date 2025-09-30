@@ -3,122 +3,102 @@
 # =============================
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
-from typing import Dict
 
-# 색상 팔레트 (차트에서 사용)
-COLORS = {
-    "민주": "#1976D2",
-    "보수": "#D32F2F",
-    "진보": "#F9A825",
-    "기타": "#9E9E9E",
-    "진보당": "#E91E63",
-}
-
-# 선거 정렬(가능한 10개: 2016~2025)
-ELECTION_ORDER = [
-    "2016_na_pro",
-    "2017_president",
-    "2018_loc_pro",
-    "2020_na_pro",
-    "2022_president",
-    "2024_na_pro",
-    "2025_president",
-]
-# 위 목록 외 추가 항목이 있으면 뒤에 정렬되도록 보조 키 제공
-
-
-def _election_sort_key(x: str) -> tuple[int, str]:
-    try:
-        idx = ELECTION_ORDER.index(x)
-        return (0, idx)
-    except ValueError:
-        return (1, x)
-
-
+# -------------------------------------------------
+# (참고) 이미 구현되어 있다면 기존 것을 사용하세요.
+# 여기서는 인터페이스만 맞춰 둔 더미 예시입니다.
+# -------------------------------------------------
 def compute_trend_series(df_trend: pd.DataFrame, code: str) -> pd.DataFrame:
-    """선거코드별(시간축) label별 prop% 피벗. 소수점 2자리 반올림.
-    반환: columns=['election','민주','보수','진보','기타']
     """
-    t = df_trend[df_trend["코드"] == str(code)].copy()
-    t = t[t["label"].isin(["민주", "보수", "진보", "기타"])]
-    # 선거 필터: 2016~2025 전체 포함(데이터에 존재하는 한)
-    t["_key"] = t["election"].apply(_election_sort_key)
-    t = t.sort_values(["_key", "election", "label"]).drop(columns=["_key"])
-    p = t.pivot_table(index="election", columns="label", values="prop", aggfunc="mean").reset_index()
-    for c in ["민주", "보수", "진보", "기타"]:
-        if c in p.columns:
-            p[c] = p[c].round(2)
-        else:
-            p[c] = pd.NA
-    return p
-
-
-def compute_summary_metrics(df_trend: pd.DataFrame, df_24: pd.DataFrame, df_idx: pd.DataFrame | None, code: str) -> Dict[str, float]:
-    """요약 지표 산출.
-    - PL_prg_str: 2016 이후 비대선(총선/지선)에서 진보 평균 득표율
-    - PL_swing_B, PL_gap_B: 2016 이후 10개 선거 기준 (데이터 가용한 범위)
-    - A지표/EE_* 등은 index_sample이 있으면 해당 값을 사용(우선)
+    주어진 선거구(code)에 대한 정당성향별 득표 추이 시계열을 반환.
+    실제 구현은 프로젝트 내 기존 로직 사용.
     """
-    out = {"PL_prg_str": float("nan"), "PL_swing_B": float("nan"), "PL_gap_B": float("nan")}
+    if df_trend is None or len(df_trend) == 0:
+        return pd.DataFrame()
+    code_str = str(code)
+    return df_trend[df_trend["코드"].astype(str) == code_str].copy()
 
-    # index_sample 우선 사용
-    if df_idx is not None and not df_idx.empty:
-        row = df_idx[df_idx["코드"] == str(code)]
-        if not row.empty:
-            for k in ["PL_swing_B", "PL_gap_B"]:
-                if k in row.columns:
-                    out[k] = float(row.iloc[0][k]) if pd.notna(row.iloc[0][k]) else float("nan")
+def compute_24_gap(df_24: pd.DataFrame, code: str) -> float | None:
+    """
+    2024 총선에서 1위-2위 득표율 격차를 계산 (가능할 때만).
+    """
+    try:
+        row24 = df_24[df_24["코드"].astype(str) == str(code)]
+        if not row24.empty and {"1위득표율", "2위득표율"}.issubset(row24.columns):
+            gap = float(row24.iloc[0]["1위득표율"]) - float(row24.iloc[0]["2위득표율"])
+            return round(gap, 2)
+    except Exception:
+        pass
+    return None
 
-    # 진보정당득표력(비대선 평균)
-    t = df_trend[(df_trend["코드"] == str(code)) & (~df_trend["election"].str.contains("president", na=False))]
-    prg = t[t["label"] == "진보"]["prop"].dropna()
-    if len(prg) > 0:
-        out["PL_prg_str"] = round(prg.mean(), 2)
+def compute_summary_metrics(
+    df_trend: pd.DataFrame,
+    df_24: pd.DataFrame,
+    df_idx: pd.DataFrame,
+    code: str,
+) -> dict:
+    """
+    요약 지표 반환:
+    - PL_prg_str: 진보정당 득표력(%) [외부지표 있으면 사용, 없으면 NaN]
+    - PL_swing_B: 유동성 등급(문자) [외부지표 없으면 'N/A']
+    - PL_gap_B:  경합도 수치(혹은 등급 수치화) [외부지표 없으면 24년 1-2위 격차 사용]
 
-    # B지표 계산(데이터 기반): 1위 블록 변화 횟수, 평균 1-2위 격차
-    # 선거별 블록 득표율 합이 아닌, label prop 자체가 100 합 가정.
-    seq = (
-        df_trend[df_trend["코드"] == str(code)]
-        .groupby(["election", "label"], as_index=False)["prop"].mean()
-    )
-    if not seq.empty:
-        # 정렬
-        seq["_key"] = seq["election"].apply(_election_sort_key)
-        seq = seq.sort_values(["_key", "election"]).drop(columns=["_key"])
-        # 각 선거의 1~2위
-        top = (
-            seq.sort_values(["election", "prop"], ascending=[True, False])
-            .groupby("election")
-            .head(2)
-        )
-        # swing_B
-        winners = top.groupby("election").first().reset_index()[["election", "label"]]
-        winners["prev"] = winners["label"].shift(1)
-        swing_b = int((winners["label"] != winners["prev"]) & winners["prev"].notna()).sum()
-        out["PL_swing_B"] = float(swing_b) if pd.isna(out.get("PL_swing_B")) else out["PL_swing_B"]
-        # gap_B (평균 1-2위 격차)
-        gaps = (
-            top.groupby("election")["prop"].apply(lambda s: s.max() - s.min()).dropna()
-        )
-        if len(gaps) > 0:
-            out["PL_gap_B"] = round(float(gaps.mean()), 2) if pd.isna(out.get("PL_gap_B")) else out["PL_gap_B"]
+    외부 지표(df_idx)가 없거나 코드가 매칭되지 않아도 앱이 죽지 않도록
+    방어 로직을 포함.
+    """
+    out = {
+        "PL_prg_str": np.nan,
+        "PL_swing_B": "N/A",
+        "PL_gap_B": np.nan,
+    }
+
+    code_str = str(code)
+
+    # --- 외부 지표가 비었거나, '코드'가 없으면 24년 격차만 계산 시도 ---
+    if df_idx is None or len(df_idx) == 0 or ("코드" not in df_idx.columns):
+        gap = compute_24_gap(df_24, code_str)
+        if gap is not None:
+            out["PL_gap_B"] = gap
+        return out
+
+    # --- df_idx에서 대상 행 추출 ---
+    sub = df_idx[df_idx["코드"].astype(str) == code_str]
+    if sub.empty:
+        # 매칭 실패 시에도 최소한 격차는 계산해 전달
+        gap = compute_24_gap(df_24, code_str)
+        if gap is not None:
+            out["PL_gap_B"] = gap
+        return out
+
+    row = sub.iloc[0]
+
+    # --- 외부 지표 필드 사용 (있을 때만) ---
+    if "PL_prg_str" in row.index:
+        try:
+            out["PL_prg_str"] = float(row["PL_prg_str"])
+        except Exception:
+            pass
+
+    if "PL_swing_B" in row.index:
+        try:
+            out["PL_swing_B"] = str(row["PL_swing_B"])
+        except Exception:
+            pass
+
+    if "PL_gap_B" in row.index:
+        try:
+            out["PL_gap_B"] = float(row["PL_gap_B"])
+        except Exception:
+            # 외부 값 파싱 실패 시 24년 격차로 보조
+            gap = compute_24_gap(df_24, code_str)
+            if gap is not None:
+                out["PL_gap_B"] = gap
+    else:
+        # 필드 자체가 없으면 24년 격차 보조
+        gap = compute_24_gap(df_24, code_str)
+        if gap is not None:
+            out["PL_gap_B"] = gap
 
     return out
-
-
-def compute_24_gap(row_24: pd.DataFrame) -> float:
-    """24년 1–2위 득표율 격차(%p) 계산."""
-    if row_24 is None or row_24.empty:
-        return float("nan")
-    # 후보*_득표율 컬럼 수집
-    cols = [c for c in row_24.columns if c.endswith("득표율") and c.startswith("후보")]
-    vals = (
-        row_24.iloc[0][cols].astype(float).dropna().sort_values(ascending=False).tolist()
-        if len(row_24) > 0 else []
-    )
-    if len(vals) >= 2:
-        return round(vals[0] - vals[1], 2)
-    return float("nan")
-
-

@@ -193,30 +193,46 @@ def render_vote_trend_chart(ts: pd.DataFrame):
         st.info("득표 추이 데이터가 없습니다.")
         return
 
-    plot_df = _norm_cols(ts.copy())
+    df = ts.copy()
 
-    # 이 파일은 vote_trend.csv 기준
-    # 컬럼: region, code, election, label, votes, prop
-    required_cols = {"election", "label", "prop"}
-    if not required_cols.issubset(plot_df.columns):
-        st.warning("필수 컬럼(election, label, prop)이 없습니다.")
-        st.dataframe(plot_df.head())
+    # 필수 컬럼 확인
+    need = {"election", "label", "prop"}
+    if not need.issubset(df.columns):
+        st.warning(f"필수 컬럼 누락: {need - set(df.columns)}")
+        st.dataframe(df.head())
         return
 
-    # 연도 추출 (election에서 앞 4자리)
-    plot_df["year"] = plot_df["election"].astype(str).str.extract(r"(\d{4})").astype(int)
+    # 숫자 보정
+    df["prop"] = pd.to_numeric(df["prop"], errors="coerce")
 
-    # 범례 순서와 색상 지정
-    party_order = ["민주", "보수", "진보", "기타"]
+    # 연도 추출(예: '2016_na_pro' → 2016)
+    df["year"] = (
+        df["election"]
+        .astype(str)
+        .str.extract(r"(\d{4})")[0]
+        .astype("Int64")  # 결측 허용 정수
+    )
+
+    # 그릴 데이터만 남기기
+    df = df.dropna(subset=["year", "prop"])
+    if df.empty:
+        st.info("그릴 수 있는 득표 데이터가 없습니다.")
+        return
+
+    # 범례 순서 & 색상
+    party_order  = ["민주", "보수", "진보", "기타"]
     party_colors = ["#152484", "#E61E2B", "#450693", "#798897"]
 
-    # Altair 라인차트
+    # y축 포맷: 값이 0~1이면 %포맷, 0~100이면 그대로
+    vmax = df["prop"].max()
+    y_enc = alt.Y("prop:Q", title="득표율(%)") if vmax > 1 else alt.Y("prop:Q", title="득표율", axis=alt.Axis(format=".0%"))
+
     chart = (
-        alt.Chart(plot_df)
+        alt.Chart(df)
         .mark_line(point=True)
         .encode(
             x=alt.X("year:O", title="연도", sort="ascending"),
-            y=alt.Y("prop:Q", title="득표율(%)"),
+            y=y_enc,
             color=alt.Color(
                 "label:N",
                 title="정당계열",
@@ -226,8 +242,8 @@ def render_vote_trend_chart(ts: pd.DataFrame):
             tooltip=[
                 alt.Tooltip("year:O", title="연도"),
                 alt.Tooltip("label:N", title="계열"),
-                alt.Tooltip("prop:Q", title="득표율", format=".2f"),
-                alt.Tooltip("election:N", title="선거 코드"),
+                alt.Tooltip("prop:Q", title="득표", format=".2f"),
+                alt.Tooltip("election:N", title="선거"),
             ],
         )
         .properties(height=300)
@@ -327,5 +343,6 @@ def render_population_box(pop_df: pd.DataFrame):
             else:
                 gender_colors = ["#bdd7e7", "#08519c"]  # 남성 연파랑, 여성 진파랑
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm, ff], colors=gender_colors)
+
 
 

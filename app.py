@@ -1,6 +1,3 @@
-# =============================
-# File: app.py
-# =============================
 from __future__ import annotations
 
 import re
@@ -41,20 +38,6 @@ st.set_page_config(
 )
 st.title("🗳️ 지역구 선정 1단계 조사 결과")
 st.caption("에스티아이")
-
-with st.expander("🔧 진단 보기", expanded=False):
-    try:
-        import altair as _alt
-        st.write("Altair:", _alt.__version__)
-    except Exception as e:
-        st.write("Altair import 실패:", e)
-
-    for name, df in {
-        "df_pop": df_pop, "df_party": df_party, "df_trend": df_trend,
-        "df_24": df_24, "df_curr": df_curr, "df_idx": df_idx
-    }.items():
-        st.write(f"{name} :", "빈 DF" if df is None or len(df)==0 else f"{len(df):,} rows × {len(df.columns)} cols")
-
 
 # ---------- Sidebar Navigation ----------
 st.sidebar.header("메뉴 선택")

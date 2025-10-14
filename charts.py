@@ -1,6 +1,3 @@
-# =============================
-# File: charts.py
-# =============================
 from __future__ import annotations
 
 import re
@@ -14,7 +11,6 @@ try:
         # 5,000 행 제한 해제 (대용량 melt 시 MaxRowsError 방지)
         alt.data_transformers.enable("default", max_rows=None)
     except Exception:
-        # 구버전 Altair 호환
         try:
             alt.data_transformers.disable_max_rows()
         except Exception:
@@ -273,7 +269,7 @@ def render_vote_trend_chart(ts: pd.DataFrame):
     party_colors = ["#152484", "#E61E2B", "#450693", "#798897"]
 
     vmax = df["prop"].max()
-    y_enc = alt.Y("prop:Q", title="득표율(%)") if vmax and vmax > 1 else alt.Y("prop:Q", title="득표율", axis=alt.Axis(format=".0%"))
+    y_enc = alt.Y("prop:Q", title="득표율(%)") if (pd.notna(vmax) and vmax is not None and vmax > 1) else alt.Y("prop:Q", title="득표율", axis=alt.Axis(format=".0%"))
 
     chart = (
         alt.Chart(df)
@@ -365,8 +361,8 @@ def render_population_box(pop_df: pd.DataFrame):
             male_share_2030 = (m_cnt / denom * 100.0) if denom else None
             female_share_2030 = (f_cnt / denom * 100.0) if denom else None
         else:
-            male_share_2030 = _to_pct_float(male_pct) if isinstance(male_pct, (int, float)) else male_pct
-            female_share_2030 = _to_pct_float(female_pct) if isinstance(female_pct, (int, float)) else female_pct
+            male_share_2030 = male_pct
+            female_share_2030 = female_pct
 
         # --- 상단: 유권자 수 ---
         st.metric("유권자 수", f"{total:,}" if isinstance(total, (int, float)) else "N/A")

@@ -32,7 +32,6 @@ from charts import (
 )
 
 # -----------------------------
-# Page Config (요청 사양)
 # Page Config
 # -----------------------------
 st.set_page_config(

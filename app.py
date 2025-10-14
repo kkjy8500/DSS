@@ -8,6 +8,35 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
+# ---- Matplotlib 한글 폰트 전역 강제 (앱 시작 한번) ----
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib import font_manager, rcParams
+
+    # 시스템에 설치된 한글 폰트 탐색 및 등록
+    try:
+        for fpath in font_manager.findSystemFonts(fontpaths=None, fontext="ttf"):
+            if any(key in fpath for key in ["Nanum", "NotoSansCJK", "Noto Sans CJK", "NotoSansKR", "Malgun", "AppleGothic"]):
+                try:
+                    font_manager.addfont(fpath)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # 선호 순서대로 적용
+    preferred = ["NanumGothic", "Noto Sans CJK KR", "Noto Sans KR", "Malgun Gothic", "AppleGothic"]
+    installed_names = {f.name for f in font_manager.fontManager.ttflist}
+    chosen = next((name for name in preferred if name in installed_names), None)
+    rcParams["font.family"] = chosen or "DejaVu Sans"
+    rcParams["axes.unicode_minus"] = False
+except Exception:
+    pass
+# -----------------------------------------------
+
+
 from data_loader import (
     load_population_agg,
     load_party_labels,       # ✅ party_labels.csv

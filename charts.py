@@ -15,43 +15,46 @@ try:
     import matplotlib.pyplot as plt
     from matplotlib import font_manager, rcParams
 
-from matplotlib import font_manager, rcParams
-from pathlib import Path
+    def _set_korean_font_safe():
+        """
+        한글 폰트를 '가능하면' 적용하되,
+        어떤 경우에도 Import 시 예외를 던지지 않도록 설계.
+        - 시스템에 설치된 폰트만 탐색 (외부 경로/Path 사용 안 함)
+        - 실패 시 조용히 기본 폰트로 진행
+        """
+        try:
+            preferred = [
+                "NanumGothic",         # 나눔고딕 (권장)
+                "Noto Sans CJK KR",    # Noto CJK KR
+                "Noto Sans KR",
+                "Malgun Gothic",       # Windows
+                "AppleGothic"          # macOS
+            ]
+            installed = {f.name for f in font_manager.fontManager.ttflist}
+            chosen = next((name for name in preferred if name in installed), None)
 
-def _set_korean_font():
-    """
-    1) 레포 동봉 폰트 우선 로드
-    2) 시스템 폰트 후보
-    3) 마지막으로 DejaVu Sans
-    """
-    try:
-        # 1) 레포 동봉 폰트 우선
-        local_font_paths = [
-            Path(__file__).parent / "fonts" / "NanumGothic.ttf",
-            Path(__file__).parent / "fonts" / "NanumGothicCoding.ttf",
-            Path(__file__).parent / "fonts" / "NanumGothic-Regular.ttf",
-        ]
-        for p in local_font_paths:
-            if p.exists():
-                font_manager.fontManager.addfont(str(p))
-                rcParams["font.family"] = "NanumGothic"
+            # 혹시 폰트가 등록되어 있으나 family명이 미묘하게 다른 경우를 대비해 한번 더 스캔
+            if not chosen:
+                for f in font_manager.fontManager.ttflist:
+                    if any(key in f.name for key in ["Nanum", "Noto", "Gothic"]):
+                        chosen = f.name
+                        break
+
+            if chosen:
+                rcParams["font.family"] = chosen
+            rcParams["axes.unicode_minus"] = False  # 마이너스 기호 깨짐 방지
+        except Exception:
+            # 어떤 이유든 실패하면 그냥 기본 폰트 사용
+            try:
                 rcParams["axes.unicode_minus"] = False
-                return
+            except Exception:
+                pass
 
-        # 2) 시스템 설치 폰트 탐색
-        candidates = ["Malgun Gothic", "AppleGothic", "NanumGothic", "Noto Sans CJK KR", "Noto Sans KR"]
-        installed = {f.name for f in font_manager.fontManager.ttflist}
-        for name in candidates:
-            if name in installed:
-                rcParams["font.family"] = name
-                rcParams["axes.unicode_minus"] = False
-                return
-    except Exception:
-        pass
-
-    # 3) fallback
-    rcParams["font.family"] = "DejaVu Sans"
-    rcParams["axes.unicode_minus"] = False
+    _set_korean_font_safe()
+except Exception:
+    # matplotlib 자체를 못 불러오면 그냥 None으로 두고 Altair로 대체
+    plt = None
+    # rcParams를 만지지 않음 (여기서 예외 발생 방지)
 
 # Altair (파이/라인 대체 렌더용)
 try:
@@ -476,5 +479,6 @@ def render_population_box(pop_df: pd.DataFrame):
             else:
                 gender_colors = ["#bdd7e7", "#08519c"]
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm, ff], colors=gender_colors)
+
 
 

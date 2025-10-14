@@ -10,11 +10,11 @@ from pathlib import Path
 
 from data_loader import (
     load_population_agg,
-    load_party_competence,
-    load_vote_trend,
-    load_results_2024,
-    load_current_info,
-    load_index_sample,
+    load_party_labels,       # ✅ party_labels.csv
+    load_vote_trend,         # ✅ vote_trend.csv
+    load_results_2024,       # ✅ 5_na_dis_results.csv
+    load_current_info,       # ✅ current_info.csv
+    load_index_sample,       # ✅ index_sample1012.csv (선택)
 )
 
 from metrics import (
@@ -167,16 +167,16 @@ def build_regions(primary_df: pd.DataFrame, *fallback_dfs: pd.DataFrame) -> pd.D
 # Load Data
 # -----------------------------
 with st.spinner("데이터 불러오는 중..."):
-    df_pop = load_population_agg(DATA_DIR)            # population.csv
-    df_prg = load_party_competence(DATA_DIR)          # (sample)party_competence.csv
-    df_trend = load_vote_trend(DATA_DIR)              # vote_trend_sample_all.csv
-    df_24 = load_results_2024(DATA_DIR)               # 5_na_dis_results.csv
-    df_curr = load_current_info(DATA_DIR)             # current_info.csv
-    df_idx = load_index_sample(DATA_DIR)              # index_sample.csv (선택)
+    df_pop   = load_population_agg(DATA_DIR)       # population.csv
+    df_party = load_party_labels(DATA_DIR)         # party_labels.csv
+    df_trend = load_vote_trend(DATA_DIR)           # vote_trend.csv
+    df_24    = load_results_2024(DATA_DIR)         # 5_na_dis_results.csv
+    df_curr  = load_current_info(DATA_DIR)         # current_info.csv
+    df_idx   = load_index_sample(DATA_DIR)         # index_sample1012.csv (선택)
 
 # 표준화
 df_pop   = ensure_code_col(df_pop)
-df_prg   = ensure_code_col(df_prg)
+df_party = ensure_code_col(df_party)
 df_trend = ensure_code_col(df_trend)
 df_24    = ensure_code_col(df_24)
 df_curr  = ensure_code_col(df_curr)
@@ -195,7 +195,7 @@ if menu == "종합":
             n_regions = df_pop["코드"].astype(str).map(_canon_code).nunique()
         st.metric("지역 수", f"{n_regions:,}")
     with c2:
-        st.metric("데이터 소스(표) 수", f"{sum([len(x) > 0 for x in [df_pop, df_24, df_curr, df_trend, df_prg, df_idx]])}/6")
+        st.metric("데이터 소스(표) 수", f"{sum([len(x) > 0 for x in [df_pop, df_24, df_curr, df_trend, df_party, df_idx]])}/6")
     with c3:
         st.metric("최근 파일 로드 상태", "OK" if any(len(x) > 0 for x in [df_pop, df_24, df_curr, df_trend]) else "확인 필요")
 
@@ -245,7 +245,7 @@ elif menu == "지역별 분석":
     col_a, col_b = st.columns([0.9, 1.1])
     with col_a:
         st.subheader("진보당 현황")
-        prg_row = get_by_code(df_prg, sel_code)
+        prg_row = get_by_code(df_party, sel_code)   # ✅ party_labels에서 필요 필드 사용
         pop_row = get_by_code(df_pop, sel_code)
         render_prg_party_box(prg_row, pop_row)
     with col_b:
@@ -274,9 +274,9 @@ else:
     st.write("- population.csv: 지역구별 인구/유권자 구조")
     st.write("- 5_na_dis_results.csv: 2024 총선 지역구별 1·2위 득표 정보")
     st.write("- current_info.csv: 현직 의원 기본 정보")
-    st.write("- vote_trend_sample_all.csv: 선거별 정당 성향 득표 추이")
-    st.write("- (sample)party_competence.csv: 진보당 관련 지표 (득표력, 조직 규모 등)")
-    st.write("- index_sample.csv: 외부 지표(PL/EE 등) 선택적 제공")
+    st.write("- vote_trend.csv: 선거별 정당 성향 득표 추이")
+    st.write("- party_labels.csv: 정당 코드/라벨 등 매핑 정보")
+    st.write("- index_sample1012.csv: 외부 지표(PL/EE 등) *선택*")
 
     with st.expander("각 DataFrame 컬럼 미리보기"):
         def _cols(df, name):
@@ -285,12 +285,12 @@ else:
                 st.write("없음/빈 데이터")
             else:
                 st.code(", ".join(map(str, df.columns.tolist())))
-        _cols(df_pop,  "df_pop (population)")
-        _cols(df_24,   "df_24 (results_2024)")
-        _cols(df_curr, "df_curr (current_info)")
-        _cols(df_trend,"df_trend (vote_trend)")
-        _cols(df_prg,  "df_prg (progressive_party)")
-        _cols(df_idx,  "df_idx (index_sample)")
+        _cols(df_pop,   "df_pop (population)")
+        _cols(df_24,    "df_24 (results_2024)")
+        _cols(df_curr,  "df_curr (current_info)")
+        _cols(df_trend, "df_trend (vote_trend)")
+        _cols(df_party, "df_party (party_labels)")
+        _cols(df_idx,   "df_idx (index_sample1012)")
 
 st.write("")
 st.caption("© 2025 전략지역구 조사 · Streamlit 대시보드")

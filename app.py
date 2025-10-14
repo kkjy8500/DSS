@@ -27,8 +27,8 @@ from charts import (
     render_vote_trend_chart,
     render_population_box,
     render_incumbent_card,
-    render_summary_cards,
-    render_results_table,
+    render_results_2024_card,
+    render_prg_party_box,
 )
 
 # -----------------------------
@@ -209,7 +209,7 @@ if menu == "종합":
             st.subheader("시/도별 지역구 개수")
             vc = (
                 base_for_sido[[sido_col, "코드"]].dropna()
-                .assign(코드=base_for_sido["코드"].astype(str).map(_canon_code))
+                .assign(코드=lambda d: d["코드"].astype(str).map(_canon_code))
                 .groupby(sido_col)["코드"].nunique()
                 .sort_values(ascending=False)
                 .rename("지역구수")

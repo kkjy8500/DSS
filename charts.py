@@ -1,19 +1,44 @@
 # =============================
 # File: charts.py
 # =============================
+# ---------- 기본 모듈 ----------
 from __future__ import annotations
-
-import re
-import pandas as pd
 import streamlit as st
-import altair as alt
-from metrics import compute_24_gap
+import pandas as pd
+from pathlib import Path
 
+# ---------- 내부 모듈 ----------
+from data_loader import (
+    load_vote_trend,
+    load_current_info,
+    load_population,
+    load_5na_results,
+    load_index_sample,
+    load_party_labels,
+    load_bookmark,
+)
+
+from metrics import (
+    compute_summary_metrics,
+    compute_vote_gap,
+    compute_index_scores,
+)
+
+from charts import (
+    render_vote_trend_chart,
+    render_population_box,
+    render_incumbent_card,
+    render_summary_cards,
+    render_results_table,
+)
+
+# ---------- 시각화 관련 라이브러리 ----------
 try:
     import matplotlib
-    matplotlib.use("Agg")  # headless 환경용 백엔드
+    matplotlib.use("Agg")  # Streamlit headless 환경에서 안정적
     import matplotlib.pyplot as plt
 except Exception as _e:
+    plt = None
 
 
 # -------- 유틸 --------
@@ -339,6 +364,7 @@ def render_population_box(pop_df: pd.DataFrame):
             else:
                 gender_colors = ["#bdd7e7", "#08519c"]
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm, ff], colors=gender_colors)
+
 
 
 

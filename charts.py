@@ -3,11 +3,12 @@
 # =============================
 from __future__ import annotations
 from typing import Optional, Dict, Any
+import re
 
 import streamlit as st
 import pandas as pd
 
-# --- plotting deps ---
+# plotting deps
 try:
     import matplotlib
     matplotlib.use("Agg")
@@ -15,18 +16,15 @@ try:
 except Exception:
     plt = None
 
+# altair for pies
+try:
+    import altair as alt
+except Exception:
+    alt = None
+
 from metrics import (
     compute_summary_metrics,
-    compute_vote_gap,
-    compute_index_scores,
-)
-
-from charts import (
-    render_vote_trend_chart,
-    render_population_box,
-    render_incumbent_card,
-    render_summary_cards,
-    render_results_table,
+    compute_24_gap,
 )
 
 # -------- 유틸 --------
@@ -74,6 +72,9 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 # -------- 내부: 파이차트 생성 (Altair) --------
 def _pie_chart(title: str, labels: list[str], values: list[float], colors: list[str], width: int = 260, height: int = 260):
+    if alt is None:
+        st.info(f"{title} 시각화(Altair)를 사용할 수 없습니다.")
+        return
     vals = [(v if isinstance(v, (int, float)) and v > 0 else 0.0) for v in values]
     total = sum(vals)
     if total <= 0:
@@ -81,7 +82,7 @@ def _pie_chart(title: str, labels: list[str], values: list[float], colors: list[
         return
     vals = [v / total * 100.0 for v in vals]
     df = pd.DataFrame({"구성": labels, "비율": vals})
- 
+
     chart = (
         alt.Chart(df)
         .mark_arc(innerRadius=60, stroke="white", strokeWidth=1)
@@ -98,7 +99,6 @@ def _pie_chart(title: str, labels: list[str], values: list[float], colors: list[
 
 # -------- 24년 결과 카드 (5_na_dis_results.csv) --------
 def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, code: str = None):
-    # 여러 연도 행이 들어오므로, 2024가 있으면 2024, 없으면 최댓값 연도를 선택
     if res_row is None or res_row.empty:
         st.info("해당 선거구의 24년 결과 데이터가 없습니다.")
         return
@@ -117,7 +117,6 @@ def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, 
     else:
         r = res_row.iloc[0]
 
-    # 이 데이터셋은 '후보1_이름/후보1_득표율/후보2_...' 형식(5_na_dis_results.csv)
     c1n = next((c for c in ["후보1_이름", "1위이름", "1위 후보", "1위_이름", "1st_name"] if c in res_row.columns), None)
     c1v = next((c for c in ["후보1_득표율", "1위득표율", "1위 득표율", "1st_share", "1위득표율(%)"] if c in res_row.columns), None)
     c2n = next((c for c in ["후보2_이름", "2위이름", "2위 후보", "2위_이름", "2nd_name"] if c in res_row.columns), None)
@@ -170,13 +169,10 @@ def render_incumbent_card(cur_row: pd.DataFrame):
         if status_col:
             st.caption(f"상태: {r.get(status_col)}")
 
-# -------- 진보당 현황 박스 (party_labels.csv 기반 - 컬럼 유연 처리) --------
+# -------- 진보당 현황 박스 --------
 def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
     """
-    party_labels.csv는 원래 '정당 코드/라벨/계열' 매핑 성격.
-    - 만약 '진보당 득표력' 같은 지표가 있으면 표시
-    - 없으면 '지표 미제공'로 안전 처리
-    - 조직/후보 수 같은 필드는 있으면 표시
+    party_labels.csv가 지표를 담고 있다면 유연하게 표출.
     """
     box = st.container()
     with box:
@@ -188,7 +184,6 @@ def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
         prg_row = _norm_cols(prg_row)
         r = prg_row.iloc[0]
 
-        # 득표력/조직/후보 컬럼 유연 탐색
         strength_col = next((c for c in ["진보당 득표력","득표력","progressive_strength","PL_prg_str"] if c in prg_row.columns), None)
         org_col      = next((c for c in ["진보당 당원수","당원수","조직수","branch_count","members"] if c in prg_row.columns), None)
         cand_col     = next((c for c in ["진보당 지방선거후보","지방선거후보수","local_candidates"] if c in prg_row.columns), None)
@@ -226,59 +221,94 @@ def render_vote_trend_chart(ts: pd.DataFrame):
         st.info("득표 추이 데이터가 없습니다.")
         return
 
-    # --- 컬럼 표준화(의존성 없이 처리) ---
-    df = ts.copy()
+    df = _norm_cols(ts.copy())
 
-    # 연도 컬럼 찾기
+    # long 포맷 감지 (label/prop)
+    label_col = None
+    value_col = None
+    for lc in ["label", "성향", "정당성향", "party_label"]:
+        if lc in df.columns:
+            label_col = lc
+            break
+    for vc in ["prop", "득표율", "비율", "share", "ratio", "pct"]:
+        if vc in df.columns:
+            value_col = vc
+            break
+
+    # year/연도
     year_col = None
-    for c in ["연도", "year", "년도"]:
-        if c in df.columns:
-            year_col = c
+    for yc in ["year", "연도", "년도"]:
+        if yc in df.columns:
+            year_col = yc
             break
-    if year_col is None and df.index.dtype.kind in ("i", "u"):  # int index면 연도로 간주
-        df = df.reset_index().rename(columns={"index": "연도"})
-        year_col = "연도"
-    elif year_col is None:
-        # 연도 불명인 경우에도 라벨만으로 진행
-        pass
 
-    # 선거명 컬럼 찾기
+    # 선거명
     elec_col = None
-    for c in ["선거명", "election"]:
-        if c in df.columns:
-            elec_col = c
+    for ec in ["election", "선거명"]:
+        if ec in df.columns:
+            elec_col = ec
             break
 
-    # 시리즈 컬럼(정당 성향)만 남기기
-    drop_cands = {"코드", "선거구명", "지역구", "district", "선거명", "election", "label"}
-    value_cols = [c for c in df.columns if c not in drop_cands and c != year_col]
+    # long -> wide pivot
+    if label_col and value_col:
+        # 값이 0~1이면 %로 변환
+        if pd.api.types.is_numeric_dtype(df[value_col]) and (df[value_col].dropna() <= 1).all():
+            df[value_col] = df[value_col] * 100.0
+        else:
+            df[value_col] = df[value_col].apply(lambda x: _to_pct_float(x, default=None))
+        # 라벨축 생성
+        if year_col and elec_col:
+            df["__x__"] = df[year_col].astype(str) + " " + df[elec_col].astype(str)
+        elif year_col:
+            df["__x__"] = df[year_col].astype(str)
+        elif elec_col:
+            df["__x__"] = df[elec_col].astype(str)
+        else:
+            df["__x__"] = df.index.astype(str)
 
-    # --- x축 라벨 생성: 연도 + 선거명 (예: 2024 서울 총선 비례) ---
-    if year_col and elec_col:
-        df["__year_label__"] = df[year_col].astype(str) + " " + df[elec_col].astype(str)
-    elif year_col:
-        df["__year_label__"] = df[year_col].astype(str)
-    elif elec_col:
-        df["__year_label__"] = df[elec_col].astype(str)
+        # 정렬
+        if year_col:
+            df = df.sort_values(by=year_col, ascending=True)
+
+        wide = df.pivot_table(index="__x__", columns=label_col, values=value_col, aggfunc="mean")
+        wide = wide.reset_index().rename(columns={"__x__": "__year_label__"})
     else:
-        # 전혀 없으면 행 인덱스로
-        df["__year_label__"] = df.index.astype(str)
+        # wide 그대로 사용 (연도/선거명 기반 x축 생성)
+        # 연도 컬럼 찾기
+        if year_col is None and df.index.dtype.kind in ("i", "u"):
+            df = df.reset_index().rename(columns={"index": "연도"})
+            year_col = "연도"
+        # x라벨
+        if year_col and elec_col:
+            df["__year_label__"] = df[year_col].astype(str) + " " + df[elec_col].astype(str)
+        elif year_col:
+            df["__year_label__"] = df[year_col].astype(str)
+        elif elec_col:
+            df["__year_label__"] = df[elec_col].astype(str)
+        else:
+            df["__year_label__"] = df.index.astype(str)
+        if year_col:
+            df = df.sort_values(by=year_col, ascending=True)
+        wide = df
 
-    # 그리기용 정렬(연도 있으면 연도 기준 오름차순)
-    if year_col:
-        df = df.sort_values(by=year_col, ascending=True)
-
-    # 인덱스를 라벨로
-    df = df.set_index("__year_label__", drop=True)
-
-    # --- 시각화 ---
-    fig, ax = plt.subplots(figsize=(10, 5))
+    # 시리즈 후보 및 파렛트/순서
     party_order = ["진보", "중도", "보수", "기타"]
     colors = {"진보": "#450693", "중도": "#152484", "보수": "#E61E2B", "기타": "#798897"}
 
-    for party in party_order:
-        if party in value_cols:
-            ax.plot(df.index, df[party], marker="o", label=party, color=colors.get(party, "#999999"))
+    # 실제 컬럼: wide 기준에서 party_order 교집합
+    series_cols = [p for p in party_order if p in wide.columns]
+
+    # series_cols가 비면, 숫자형 컬럼 자동 탐색(라벨 추정 실패 대비)
+    if not series_cols:
+        numeric_cols = [c for c in wide.columns if c not in ["__year_label__", year_col, elec_col] and pd.api.types.is_numeric_dtype(wide[c])]
+        # 최대 6개까지만 표시
+        series_cols = numeric_cols[:6]
+        # 기본 색 하나로 처리(지정 색 없으면 matplotlib 기본)
+
+    x = wide["__year_label__"]
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for col in series_cols:
+        ax.plot(x, wide[col], marker="o", label=col, color=colors.get(col, None))
 
     ax.set_title("정당성향별 득표 추이", fontsize=13, pad=15)
     ax.set_xlabel("연도 / 선거명")
@@ -288,61 +318,60 @@ def render_vote_trend_chart(ts: pd.DataFrame):
 
     st.pyplot(fig)
 
-
 # -------- 인구 정보 박스 (population.csv) --------
 def render_population_box(pop_df: pd.DataFrame):
     box = st.container()
     with box:
         st.markdown("**인구 정보**")
- 
+
         if pop_df is None or pop_df.empty:
             st.info("인구 데이터가 없습니다.")
             return
- 
+
         pop_df = _norm_cols(pop_df)
         r = pop_df.iloc[0]
- 
+
         # 1) 비율 컬럼 우선
         elder_col  = next((c for c in ["고령층비율", "65세이상비율", "age65p"] if c in pop_df.columns), None)
         youth_col  = next((c for c in ["청년층비율", "39세이하비율", "age39m"] if c in pop_df.columns), None)
         mid_col    = next((c for c in ["40_59비율", "40-59비율", "age40_59p", "4050비율"] if c in pop_df.columns), None)
- 
+
         male_col   = next((c for c in ["남성비율", "남", "male_p", "2030 남성비율"] if c in pop_df.columns), None)
         female_col = next((c for c in ["여성비율", "여", "female_p", "2030 여성비율"] if c in pop_df.columns), None)
- 
+
         elder_pct = _to_pct_float(r.get(elder_col)) if elder_col else None
         youth_pct = _to_pct_float(r.get(youth_col)) if youth_col else None
         mid_pct   = _to_pct_float(r.get(mid_col))   if mid_col   else None
         male_pct  = _to_pct_float(r.get(male_col))  if male_col  else None
         female_pct= _to_pct_float(r.get(female_col))if female_col else None
- 
+
         # 2) 인원수 기반 비율
         total_col = next((c for c in ["유권자수", "유권자 수", "voters", "전체 유권자"] if c in pop_df.columns), None)
         c2030_col = "2030" if "2030" in pop_df.columns else None
         c4050_col = "4050" if "4050" in pop_df.columns else None
         c65p_col  = "65세 이상" if "65세 이상" in pop_df.columns else None
- 
+
         total = _to_int(r.get(total_col)) if total_col else None
         v2030 = _to_int(r.get(c2030_col)) if c2030_col else None
         v4050 = _to_int(r.get(c4050_col)) if c4050_col else None
         v65p  = _to_int(r.get(c65p_col))  if c65p_col  else None
- 
+
         def pct(val):
             return (val / total * 100.0) if (isinstance(val, (int, float)) and isinstance(total, (int, float)) and total) else None
- 
+
         if elder_pct is None:
             elder_pct = pct(v65p)
         if youth_pct is None:
             youth_pct = pct(v2030)
         if mid_pct is None:
             mid_pct = pct(v4050)
- 
+
         # 60-64 추가(남는 비율로 추정)
         s_pct = None
         if all(isinstance(x, (int, float)) for x in [youth_pct, mid_pct, elder_pct]) and isinstance(total, (int, float)):
-            used = youth_pct + mid_pct + elder_pct
+            used = (youth_pct or 0) + (mid_pct or 0) + (elder_pct or 0)
             s_pct = max(0.0, 100.0 - used)
- 
+
         # 2030 남/여
         male_share_2030 = None
         female_share_2030 = None
@@ -357,13 +386,13 @@ def render_population_box(pop_df: pd.DataFrame):
         else:
             male_share_2030 = male_pct
             female_share_2030 = female_pct
- 
+
         # --- 상단: 유권자 수 ---
         st.metric("유권자 수", f"{total:,}" if isinstance(total, (int, float)) else "N/A")
- 
+
         # --- 파이차트 2개 ---
         col1, col2 = st.columns(2)
- 
+
         y = youth_pct or 0.0
         m = mid_pct   or 0.0
         s = s_pct     or 0.0
@@ -371,7 +400,7 @@ def render_population_box(pop_df: pd.DataFrame):
         with col1:
             age_colors = ["#deebf7", "#9ecae1", "#6baed6", "#08519c"]
             _pie_chart("연령 구성", ["청년층(≤39)", "40-59", "60-64", "65+"], [y, m, s, e], colors=age_colors)
- 
+
         mm = male_share_2030 or 0.0
         ff = female_share_2030 or 0.0
         with col2:
@@ -380,9 +409,3 @@ def render_population_box(pop_df: pd.DataFrame):
             else:
                 gender_colors = ["#bdd7e7", "#08519c"]
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm, ff], colors=gender_colors)
-
-
-
-
-
-

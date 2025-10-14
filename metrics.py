@@ -7,6 +7,7 @@ import re
 import numpy as np
 import pandas as pd
 
+# 공통 코드 후보 (bookmark.csv 기준 다양성 대응)
 _CODE_CANDIDATES = ["코드", "지역구코드", "선거구코드", "지역코드", "code", "CODE"]
 
 def _canon_code(x: object) -> str:
@@ -70,51 +71,57 @@ def _extract_year_from_election(election: str) -> int | None:
     return None
 
 def compute_trend_series(df_trend: pd.DataFrame, code: str) -> pd.DataFrame:
+    """
+    vote_trend.csv 전용:
+    - long 형태(election/label/prop) → 연도 컬럼(year) 추가 후 반환
+    - wide 형태(연도 + 계열 컬럼들)도 그대로 반환(차트에서 melt 처리)
+    """
     sub = _get_by_code_local(df_trend, code)
     if sub.empty:
         return pd.DataFrame()
     sub = _normalize_columns(sub)
 
+    # 우선 long 포맷 후보 탐지
     election_col = "election" if "election" in sub.columns else ("연도" if "연도" in sub.columns else None)
-    label_col    = "label" if "label" in sub.columns else next((c for c in ["성향","정당성향","party_label"] if c in sub.columns), None)
-    value_col    = "prop"  if "prop"  in sub.columns else next((c for c in ["득표율","비율","share","ratio","pct"] if c in sub.columns), None)
+    label_col    = "label"    if "label"    in sub.columns else next((c for c in ["성향","정당성향","party_label"] if c in sub.columns), None)
+    value_col    = "prop"     if "prop"     in sub.columns else next((c for c in ["득표율","비율","share","ratio","pct"] if c in sub.columns), None)
 
-    if not label_col or not value_col:
-        return sub
-
-    try:
-        if sub[value_col].dtype == "O":
-            sub[value_col] = sub[value_col].apply(_pct_float)
-        else:
-            if pd.api.types.is_numeric_dtype(sub[value_col]):
+    # long 포맷 → 보정 후 반환
+    if label_col and value_col:
+        try:
+            if sub[value_col].dtype == "O":
+                sub[value_col] = sub[value_col].apply(_pct_float)
+            elif pd.api.types.is_numeric_dtype(sub[value_col]):
                 if (sub[value_col].dropna() <= 1).all():
                     sub[value_col] = sub[value_col] * 100.0
-    except Exception:
-        pass
+        except Exception:
+            pass
 
-    if election_col == "election":
-        sub["year"] = sub["election"].apply(_extract_year_from_election)
-    elif election_col == "연도":
+        if election_col == "election":
+            sub["year"] = sub["election"].apply(_extract_year_from_election)
+        elif election_col == "연도":
+            sub["year"] = pd.to_numeric(sub["연도"], errors="coerce")
+        else:
+            sub["year"] = pd.NA
+
+        # long 그대로 반환(차트에서 직접 사용)
+        return sub[["year", election_col] + ([label_col] if label_col else []) + ([value_col] if value_col else [])].dropna(subset=["year"]).reset_index(drop=True)
+
+    # wide 포맷(연도 + 성향별 칼럼들) → 그대로 반환
+    # 최소 요건: '연도' 또는 'year' 비슷한 축
+    if "연도" in sub.columns:
         sub["year"] = pd.to_numeric(sub["연도"], errors="coerce")
-    else:
-        sub["year"] = pd.NA
-
-    try:
-        piv = (
-            sub.dropna(subset=["year"])
-               .pivot_table(index="year", columns=label_col, values=value_col, aggfunc="mean")
-               .sort_index()
-        )
-        piv = piv.reset_index()
-        return piv
-    except Exception:
+    elif "year" not in sub.columns:
+        # year가 없으면 추정 불가 → 그대로 반환
         return sub
+
+    return sub
 
 def compute_24_gap(df_24: pd.DataFrame, code: str) -> float | None:
     """
     2024(있으면 2024, 없으면 최신 연도)의 1~2위 득표율 격차(p).
-    - 5_na_dis_results.csv: '후보1_득표율' / '후보2_득표율' 사용
-    - 과거 호환: '1위득표율' / '2위득표율' 등도 지원
+    - 5_na_dis_results.csv 기준(후보1_득표율 / 후보2_득표율)
+    - 호환: '1위득표율' / '2위득표율' 등도 지원
     """
     try:
         sub = _get_by_code_local(df_24, code)
@@ -147,6 +154,11 @@ def compute_24_gap(df_24: pd.DataFrame, code: str) -> float | None:
         return None
 
 def compute_summary_metrics(df_trend: pd.DataFrame, df_24: pd.DataFrame, df_idx: pd.DataFrame, code: str) -> dict:
+    """
+    index_sample1012.csv 기준:
+    - PL_prg_str / PL_swing_B / PL_gap_B 사용
+    - 누락 시 24년 격차 계산으로 보완
+    """
     out = {"PL_prg_str": np.nan, "PL_swing_B": "N/A", "PL_gap_B": np.nan}
 
     sub = _get_by_code_local(df_idx, code)

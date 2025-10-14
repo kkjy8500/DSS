@@ -4,11 +4,11 @@ import re
 import pandas as pd
 import streamlit as st
 
-# Altair: 임포트 실패해도 앱이 죽지 않도록 보호 + 행 제한 해제
+# Altair만 사용 (Matplotlib 전부 제거)
 try:
     import altair as alt
+    # 대용량 데이터에서도 에러 안 나게 행 제한 해제
     try:
-        # 5,000 행 제한 해제 (대용량 melt 시 MaxRowsError 방지)
         alt.data_transformers.enable("default", max_rows=None)
     except Exception:
         try:
@@ -16,7 +16,7 @@ try:
         except Exception:
             pass
 except Exception:
-    alt = None
+    alt = None  # Altair가 없어도 앱은 죽지 않게
 
 from metrics import compute_24_gap
 
@@ -66,8 +66,7 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
 # -------- 내부: 파이차트 생성 (Altair) --------
 def _pie_chart(title: str, labels: list[str], values: list[float], colors: list[str], width: int = 260, height: int = 260):
     if alt is None:
-        # Altair 불가 시 간단 폴백 (표시만)
-        st.info(f"{title} 시각화를 Altair 없이 표시합니다.")
+        st.info(f"{title}: 시각화 라이브러리(Altair)를 사용할 수 없습니다.")
         st.dataframe(pd.DataFrame({"구성": labels, "비율(%)": values}))
         return
 
@@ -95,7 +94,6 @@ def _pie_chart(title: str, labels: list[str], values: list[float], colors: list[
 
 # -------- 24년 결과 카드 (5_na_dis_results.csv) --------
 def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, code: str = None):
-    # 여러 연도 행이 들어오므로, 2024가 있으면 2024, 없으면 최댓값 연도를 선택
     if res_row is None or res_row.empty:
         st.info("해당 선거구의 24년 결과 데이터가 없습니다.")
         return
@@ -114,7 +112,6 @@ def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, 
     else:
         r = res_row.iloc[0]
 
-    # 이 데이터셋은 '후보1_이름/후보1_득표율/후보2_...' 형식(5_na_dis_results.csv)
     c1n = next((c for c in ["후보1_이름", "1위이름", "1위 후보", "1위_이름", "1st_name"] if c in res_row.columns), None)
     c1v = next((c for c in ["후보1_득표율", "1위득표율", "1위 득표율", "1st_share", "1위득표율(%)"] if c in res_row.columns), None)
     c2n = next((c for c in ["후보2_이름", "2위이름", "2위 후보", "2위_이름", "2nd_name"] if c in res_row.columns), None)
@@ -169,12 +166,6 @@ def render_incumbent_card(cur_row: pd.DataFrame):
 
 # -------- 진보당 현황 박스 (party_labels.csv 기반 - 컬럼 유연 처리) --------
 def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
-    """
-    party_labels.csv는 원래 '정당 코드/라벨/계열' 매핑 성격.
-    - 만약 '진보당 득표력' 같은 지표가 있으면 표시
-    - 없으면 '지표 미제공'로 안전 처리
-    - 조직/후보 수 같은 필드는 있으면 표시
-    """
     box = st.container()
     with box:
         st.markdown("**진보당 현황**")
@@ -185,7 +176,6 @@ def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
         prg_row = _norm_cols(prg_row)
         r = prg_row.iloc[0]
 
-        # 득표력/조직/후보 컬럼 유연 탐색
         strength_col = next((c for c in ["진보당 득표력","득표력","progressive_strength","PL_prg_str"] if c in prg_row.columns), None)
         org_col      = next((c for c in ["진보당 당원수","당원수","조직수","branch_count","members"] if c in prg_row.columns), None)
         cand_col     = next((c for c in ["진보당 지방선거후보","지방선거후보수","local_candidates"] if c in prg_row.columns), None)
@@ -259,7 +249,7 @@ def render_vote_trend_chart(ts: pd.DataFrame):
         st.info("Altair를 사용할 수 없어 기본 라인차트로 대체합니다.")
         try:
             pvt = df.pivot_table(index="year", columns="label", values="prop", aggfunc="mean").sort_index()
-            st.line_chart(pvt)
+            st.line_chart(pvt)  # Streamlit 내장 라인차트 (폰트 설정 없음)
         except Exception:
             st.error("기본 라인차트도 실패했습니다.")
         return
@@ -269,13 +259,15 @@ def render_vote_trend_chart(ts: pd.DataFrame):
     party_colors = ["#152484", "#E61E2B", "#450693", "#798897"]
 
     vmax = df["prop"].max()
-    y_enc = alt.Y("prop:Q", title="득표율(%)") if (pd.notna(vmax) and vmax is not None and vmax > 1) else alt.Y("prop:Q", title="득표율", axis=alt.Axis(format=".0%"))
+    y_enc = alt.Y("prop:Q", title="득표율(%)") if (pd.notna(vmax) and vmax is not None and vmax > 1) \
+           else alt.Y("prop:Q", title="득표율", axis=alt.Axis(format=".0%"))
 
     chart = (
         alt.Chart(df)
         .mark_line(point=True)
         .encode(
-            x=alt.X("year:O", title="연도", sort="ascending", axis=alt.Axis(labelAngle=-30, labelOverlap="greedy")),
+            x=alt.X("year:O", title="연도", sort="ascending",
+                    axis=alt.Axis(labelAngle=-30, labelOverlap="greedy")),
             y=y_enc,
             color=alt.Color(
                 "label:N",

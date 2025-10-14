@@ -202,7 +202,44 @@ def render_vote_trend_chart(ts: pd.DataFrame):
         st.info("득표 추이 데이터가 없습니다.")
         return
 
-    df = _norm_cols(ts)
+    plot_df = _norm_cols(ts.copy())
+
+    # ----- 인덱스 설정(연도 기준) -----
+    if "year" in plot_df.columns:
+        plot_df = plot_df.set_index("year")
+    elif "연도" in plot_df.columns:
+        plot_df = plot_df.set_index("연도")
+
+    drop_cands = {"코드", "선거구명", "지역구", "district", "선거명", "election", "label"}
+    cols = [c for c in plot_df.columns if c not in drop_cands]
+
+    # ----- 연도+선거명 라벨 생성 후 x축 인덱스로 사용 -----
+    if "선거명" in ts.columns and "연도" in ts.columns:
+        plot_df["year_label"] = ts["연도"].astype(str) + " " + ts["선거명"]
+    elif "election" in ts.columns and "year" in ts.columns:
+        plot_df["year_label"] = ts["year"].astype(str) + " " + ts["election"]
+    else:
+        # 둘 다 없으면 기존 연도 인덱스 문자열 사용
+        plot_df["year_label"] = plot_df.index.astype(str)
+
+    plot_df = plot_df.set_index("year_label", drop=True)
+
+    # ----- 시각화 -----
+    fig, ax = plt.subplots(figsize=(10, 5))
+    party_order = ["진보", "중도", "보수", "기타"]
+    colors = {"진보": "#450693", "중도": "#152484", "보수": "#E61E2B", "기타": "#798897"}
+
+    for party in party_order:
+        if party in cols:
+            ax.plot(plot_df.index, plot_df[party], marker="o", label=party, color=colors.get(party, "#999999"))
+
+    ax.set_title("정당성향별 득표 추이", fontsize=13, pad=15)
+    ax.set_xlabel("연도 / 선거명")
+    ax.set_ylabel("득표율(%)")
+    ax.legend(title="정당 성향", loc="upper left")
+    ax.grid(True, linestyle="--", alpha=0.5)
+
+    st.pyplot(fig)
 
     # CASE A) long 포맷: election/label/prop (+ year)
     if {"label", "prop"}.issubset(df.columns) and (("election" in df.columns) or ("year" in df.columns) or ("연도" in df.columns)):
@@ -358,3 +395,4 @@ def render_population_box(pop_df: pd.DataFrame):
             else:
                 gender_colors = ["#bdd7e7", "#08519c"]
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm, ff], colors=gender_colors)
+

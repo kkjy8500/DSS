@@ -5,6 +5,22 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
+# ==== 강제 Matplotlib 차단 & 관련 경고 무시 (폰트 언급 없음) ====
+import warnings
+import streamlit as st as _st_for_patch  # 별칭으로 재임포트 (안전)
+# 1) pyplot에서 나오는 모든 UserWarning(글리프/폰트 등) 무시
+warnings.filterwarnings(
+    "ignore",
+    message=r"Glyph \d+ .* missing from font\(s\)",
+    category=UserWarning,
+    module=r"streamlit\.elements\.pyplot"
+)
+# 2) st.pyplot 자체를 무해화 (어디서 호출해도 아무 것도 하지 않음)
+if hasattr(_st_for_patch, "pyplot"):
+    _st_for_patch.pyplot = (lambda *args, **kwargs: None)
+# ============================================================
+
+
 from data_loader import (
     load_population_agg,
     load_party_labels,       # ✅ party_labels.csv

@@ -15,40 +15,42 @@ try:
     import matplotlib.pyplot as plt
     from matplotlib import font_manager, rcParams
 
+from matplotlib import font_manager, rcParams
+from pathlib import Path
+
 def _set_korean_font():
     """
-    서버/OS별로 가능한 한글 폰트를 자동 적용.
-    (우선순위: Malgun → AppleGothic → NanumGothic → Noto Sans CJK KR)
+    1) 레포 동봉 폰트 우선 로드
+    2) 시스템 폰트 후보
+    3) 마지막으로 DejaVu Sans
     """
-    candidates = [
-        "Malgun Gothic",
-        "AppleGothic",
-        "NanumGothic",
-        "NanumGothicCoding",
-        "NanumGothicExtraBold",
-        "Noto Sans CJK KR",
-        "Noto Sans KR"
-    ]
-    chosen = None
     try:
+        # 1) 레포 동봉 폰트 우선
+        local_font_paths = [
+            Path(__file__).parent / "fonts" / "NanumGothic.ttf",
+            Path(__file__).parent / "fonts" / "NanumGothicCoding.ttf",
+            Path(__file__).parent / "fonts" / "NanumGothic-Regular.ttf",
+        ]
+        for p in local_font_paths:
+            if p.exists():
+                font_manager.fontManager.addfont(str(p))
+                rcParams["font.family"] = "NanumGothic"
+                rcParams["axes.unicode_minus"] = False
+                return
+
+        # 2) 시스템 설치 폰트 탐색
+        candidates = ["Malgun Gothic", "AppleGothic", "NanumGothic", "Noto Sans CJK KR", "Noto Sans KR"]
         installed = {f.name for f in font_manager.fontManager.ttflist}
         for name in candidates:
             if name in installed:
-                chosen = name
-                break
-        # ✅ 추가: 나눔글꼴 경로 강제 로드
-        if not chosen:
-            import matplotlib.font_manager as fm
-            nanum_fonts = fm.findSystemFonts(fontpaths=None, fontext='ttf')
-            for f in nanum_fonts:
-                if "Nanum" in f:
-                    fm.fontManager.addfont(f)
-            rcParams["font.family"] = "NanumGothic"
-            rcParams["axes.unicode_minus"] = False
-            return
+                rcParams["font.family"] = name
+                rcParams["axes.unicode_minus"] = False
+                return
     except Exception:
-        chosen = None
-    rcParams["font.family"] = chosen or "DejaVu Sans"
+        pass
+
+    # 3) fallback
+    rcParams["font.family"] = "DejaVu Sans"
     rcParams["axes.unicode_minus"] = False
 
 # Altair (파이/라인 대체 렌더용)
@@ -474,4 +476,5 @@ def render_population_box(pop_df: pd.DataFrame):
             else:
                 gender_colors = ["#bdd7e7", "#08519c"]
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm, ff], colors=gender_colors)
+
 

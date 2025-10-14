@@ -9,6 +9,13 @@ import streamlit as st
 import altair as alt
 from metrics import compute_24_gap
 
+try:
+    import matplotlib
+    matplotlib.use("Agg")  # headless 환경용 백엔드
+    import matplotlib.pyplot as plt
+except Exception as _e:
+
+
 # -------- 유틸 --------
 def _to_pct_float(v, default=None):
     # '45.2%', '45,2', 0.452, ' 45.2 % ' -> 45.2
@@ -332,5 +339,6 @@ def render_population_box(pop_df: pd.DataFrame):
             else:
                 gender_colors = ["#bdd7e7", "#08519c"]
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm, ff], colors=gender_colors)
+
 
 

@@ -167,13 +167,11 @@ def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
         org_col = next((c for c in ["진보당 당원수", "당원수", "조직수", "branch_count", "members"] if c in prg_row.columns), None)
         cand_col = next((c for c in ["진보당 지방선거후보", "지방선거후보수", "local_candidates"] if c in prg_row.columns), None)
 
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         with c1:
             st.metric("득표력", "지표 미제공")  # 이 데이터셋에는 득표력 컬럼이 없음
         with c2:
             st.metric("조직 규모", f"{_to_int(r.get(org_col)):,}" if org_col and pd.notna(r.get(org_col)) else "N/A")
-        with c3:
-            st.metric("최근 추세(Δ)", "지표 미제공")
 
         if cand_col and pd.notna(r.get(cand_col)):
             st.caption(f"지방선거 후보 수: {_to_int(r.get(cand_col)):,}명")
@@ -300,3 +298,4 @@ def render_population_box(pop_df: pd.DataFrame):
             else:
                 gender_colors = ["#bdd7e7", "#08519c"]  # 남성 연파랑, 여성 진파랑
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm, ff], colors=gender_colors)
+

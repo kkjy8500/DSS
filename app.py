@@ -8,6 +8,76 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
+# ==== Matplotlib 전역 한글 폰트 강제 세팅 (앱 시작 1회) ====
+try:
+    import warnings, os
+    import matplotlib
+    matplotlib.use("Agg")  # Streamlit 서버에서 안전한 백엔드
+    import matplotlib.pyplot as plt
+    from matplotlib import font_manager, rcParams
+    from pathlib import Path
+
+    def _apply_korean_font():
+        """
+        1) 레포 동봉 폰트 우선 적용 (fonts/NanumGothic.ttf)
+        2) 시스템 폰트 후보 적용
+        3) 마지막으로 DejaVu Sans
+        + glyph 경고 제거
+        """
+        # 3-1) glyph 경고 조용히 숨김 (Streamlit 저장 시 뜨는 UserWarning)
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Glyph \d+ .* missing from font\(s\)",
+            category=UserWarning,
+            module="streamlit.elements.pyplot"
+        )
+
+        # 1) 레포 동봉 폰트 우선
+        try:
+            local_candidates = [
+                Path(__file__).parent / "fonts" / "NanumGothic.ttf",
+                Path(__file__).parent / "fonts" / "NanumGothic-Regular.ttf",
+                Path("fonts/NanumGothic.ttf"),
+            ]
+            for p in local_candidates:
+                if p.exists():
+                    font_manager.fontManager.addfont(str(p))
+                    rcParams["font.family"] = "NanumGothic"
+                    rcParams["axes.unicode_minus"] = False
+                    return
+        except Exception:
+            pass
+
+        # 2) 시스템 설치 폰트 후보
+        try:
+            preferred = [
+                "NanumGothic",
+                "Noto Sans CJK KR",
+                "Noto Sans KR",
+                "Malgun Gothic",   # Windows
+                "AppleGothic",     # macOS
+            ]
+            installed = {f.name for f in font_manager.fontManager.ttflist}
+            chosen = next((name for name in preferred if name in installed), None)
+            if chosen:
+                rcParams["font.family"] = chosen
+                rcParams["axes.unicode_minus"] = False
+                return
+        except Exception:
+            pass
+
+        # 3) 최후 fallback
+        rcParams["font.family"] = "DejaVu Sans"
+        rcParams["axes.unicode_minus"] = False
+
+    _apply_korean_font()
+
+except Exception:
+    # 어떤 이유든 폰트 세팅 실패하더라도 앱은 계속 뜨게 한다
+    pass
+# ==========================================================
+
+
 from data_loader import (
     load_population_agg,
     load_party_labels,       # ✅ party_labels.csv

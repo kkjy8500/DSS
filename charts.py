@@ -1,22 +1,19 @@
 # =============================
 # File: charts.py
 # =============================
-# ---------- 기본 모듈 ----------
 from __future__ import annotations
+from typing import Optional, Dict, Any
+
 import streamlit as st
 import pandas as pd
-from pathlib import Path
 
-# ---------- 내부 모듈 ----------
-from data_loader import (
-    load_vote_trend,
-    load_current_info,
-    load_population,
-    load_5na_results,
-    load_index_sample,
-    load_party_labels,
-    load_bookmark,
-)
+# --- plotting deps ---
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+except Exception:
+    plt = None
 
 from metrics import (
     compute_summary_metrics,
@@ -31,15 +28,6 @@ from charts import (
     render_summary_cards,
     render_results_table,
 )
-
-# ---------- 시각화 관련 라이브러리 ----------
-try:
-    import matplotlib
-    matplotlib.use("Agg")  # Streamlit headless 환경에서 안정적
-    import matplotlib.pyplot as plt
-except Exception as _e:
-    plt = None
-
 
 # -------- 유틸 --------
 def _to_pct_float(v, default=None):
@@ -364,6 +352,7 @@ def render_population_box(pop_df: pd.DataFrame):
             else:
                 gender_colors = ["#bdd7e7", "#08519c"]
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm, ff], colors=gender_colors)
+
 
 
 

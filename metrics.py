@@ -104,20 +104,15 @@ def compute_trend_series(df_trend: pd.DataFrame, code: str) -> pd.DataFrame:
         else:
             sub["year"] = pd.NA
 
-        keep = ["year"]
-        if election_col:
-            keep.append(election_col)
-        if label_col:
-            keep.append(label_col)
-        if value_col:
-            keep.append(value_col)
-
-        return sub[keep].dropna(subset=["year"]).reset_index(drop=True)
+        # long 그대로 반환(차트에서 직접 사용)
+        return sub[["year", election_col] + ([label_col] if label_col else []) + ([value_col] if value_col else [])].dropna(subset=["year"]).reset_index(drop=True)
 
     # wide 포맷(연도 + 성향별 칼럼들) → 그대로 반환
+    # 최소 요건: '연도' 또는 'year' 비슷한 축
     if "연도" in sub.columns:
         sub["year"] = pd.to_numeric(sub["연도"], errors="coerce")
     elif "year" not in sub.columns:
+        # year가 없으면 추정 불가 → 그대로 반환
         return sub
 
     return sub
@@ -125,12 +120,15 @@ def compute_trend_series(df_trend: pd.DataFrame, code: str) -> pd.DataFrame:
 def compute_24_gap(df_24: pd.DataFrame, code: str) -> float | None:
     """
     2024(있으면 2024, 없으면 최신 연도)의 1~2위 득표율 격차(p).
+    - 5_na_dis_results.csv 기준(후보1_득표율 / 후보2_득표율)
+    - 호환: '1위득표율' / '2위득표율' 등도 지원
     """
     try:
         sub = _get_by_code_local(df_24, code)
         if sub.empty:
             return None
 
+        # 2024 우선, 없으면 최신 연도
         if "연도" in sub.columns:
             tmp = sub.dropna(subset=["연도"]).copy()
             tmp["__year__"] = pd.to_numeric(tmp["연도"], errors="coerce")

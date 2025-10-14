@@ -241,69 +241,6 @@ def render_vote_trend_chart(ts: pd.DataFrame):
 
     st.pyplot(fig)
 
-    # CASE A) long 포맷: election/label/prop (+ year)
-    if {"label", "prop"}.issubset(df.columns) and (("election" in df.columns) or ("year" in df.columns) or ("연도" in df.columns)):
-        if "year" not in df.columns:
-            if "election" in df.columns:
-                df["year"] = df["election"].astype(str).str.extract(r"(\d{4})")[0].astype("Int64")
-            elif "연도" in df.columns:
-                df["year"] = pd.to_numeric(df["연도"], errors="coerce")
-        df["prop"] = pd.to_numeric(df["prop"], errors="coerce")
-        df = df.dropna(subset=["year", "prop"])
-        if df.empty:
-            st.info("그릴 수 있는 득표 데이터가 없습니다.")
-            return
-
-    # CASE B) wide 포맷: year + 각 성향 컬럼들 → melt
-    elif ("year" in df.columns or "연도" in df.columns):
-        if "year" not in df.columns:
-            df["year"] = pd.to_numeric(df["연도"], errors="coerce")
-        value_cols = [c for c in df.columns if c not in ["year","연도"]]
-        if not value_cols:
-            st.info("득표 성향 컬럼이 없어 차트를 그릴 수 없습니다.")
-            return
-        df = df[["year"] + value_cols].copy()
-        df = df.melt(id_vars=["year"], var_name="label", value_name="prop")
-        df["prop"] = pd.to_numeric(df["prop"], errors="coerce")
-        df = df.dropna(subset=["year","prop"])
-        if df.empty:
-            st.info("그릴 수 있는 득표 데이터가 없습니다.")
-            return
-    else:
-        st.warning("vote_trend 데이터에 필요한 컬럼(연도/성향/득표)이 부족합니다.")
-        st.dataframe(df.head())
-        return
-
-    # 범례 순서 & 색상 (필요 시 bookmark.csv/party_labels.csv 기준으로 교체 가능)
-    party_order  = ["민주", "보수", "진보", "기타"]
-    party_colors = ["#152484", "#E61E2B", "#450693", "#798897"]
-
-    vmax = df["prop"].max()
-    y_enc = alt.Y("prop:Q", title="득표율(%)") if vmax > 1 else alt.Y("prop:Q", title="득표율", axis=alt.Axis(format=".0%"))
-
-    chart = (
-        alt.Chart(df)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("year:O", title="연도", sort="ascending"),
-            y=y_enc,
-            color=alt.Color(
-                "label:N",
-                title="정당계열",
-                scale=alt.Scale(domain=party_order, range=party_colors),
-                legend=alt.Legend(orient="top"),
-            ),
-            tooltip=[
-                alt.Tooltip("year:O", title="연도"),
-                alt.Tooltip("label:N", title="계열"),
-                alt.Tooltip("prop:Q", title="득표", format=".2f"),
-            ],
-        )
-        .properties(height=300)
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
 # -------- 인구 정보 박스 (population.csv) --------
 def render_population_box(pop_df: pd.DataFrame):
     box = st.container()
@@ -395,4 +332,5 @@ def render_population_box(pop_df: pd.DataFrame):
             else:
                 gender_colors = ["#bdd7e7", "#08519c"]
                 _pie_chart("2030 성별 구성", ["남성", "여성"], [mm, ff], colors=gender_colors)
+
 

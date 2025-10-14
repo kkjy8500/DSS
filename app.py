@@ -1,24 +1,25 @@
 from __future__ import annotations
 
+
+# ==== Matplotlib 완전 차단 + 글리프 경고 전역 무시 ====
+import os, warnings
+os.environ.setdefault("MPLBACKEND", "agg")  # 혹시라도 로드되면 비GUI 백엔드
+
+# Matplotlib/Streamlit pyplot 경로에서 나오는 글리프 경고를 전역으로 무시
+warnings.filterwarnings("ignore", category=UserWarning, message=r".*Glyph.*missing.*")
+
+import streamlit as st  # <- 이 시점에 임포트
+# st.pyplot 호출이 어디서 발생해도 완전 무시
+def _noop_pyplot(*args, **kwargs):
+    return None
+if hasattr(st, "pyplot"):
+    st.pyplot = _noop_pyplot
+
+
 import re
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-
-# ==== 강제 Matplotlib 차단 & 관련 경고 무시 (폰트 언급 없음) ====
-import warnings
-import streamlit as st as _st_for_patch  # 별칭으로 재임포트 (안전)
-# 1) pyplot에서 나오는 모든 UserWarning(글리프/폰트 등) 무시
-warnings.filterwarnings(
-    "ignore",
-    message=r"Glyph \d+ .* missing from font\(s\)",
-    category=UserWarning,
-    module=r"streamlit\.elements\.pyplot"
-)
-# 2) st.pyplot 자체를 무해화 (어디서 호출해도 아무 것도 하지 않음)
-if hasattr(_st_for_patch, "pyplot"):
-    _st_for_patch.pyplot = (lambda *args, **kwargs: None)
-# ============================================================
 
 
 from data_loader import (

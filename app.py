@@ -24,11 +24,11 @@ from metrics import (
 )
 
 from charts import (
-    render_population_box,
     render_vote_trend_chart,
-    render_results_2024_card,
+    render_population_box,
     render_incumbent_card,
-    render_prg_party_box,
+    render_summary_cards,
+    render_results_table,
 )
 
 # -----------------------------

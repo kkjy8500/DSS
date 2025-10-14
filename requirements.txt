@@ -3,3 +3,6 @@ pandas
 numpy
 matplotlib
 altair
+
+fonttools
+git+https://github.com/naver/nanumfont.git

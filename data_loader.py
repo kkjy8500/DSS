@@ -49,10 +49,11 @@ def _tidy_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     if df is None or df.empty:
         return df
+    # strip + dedupe
     cols = []
     seen = {}
     for c in df.columns:
-        base = str(c).strip()
+        base = c.strip()
         if base not in seen:
             seen[base] = 0
             cols.append(base)
@@ -78,6 +79,10 @@ def _ensure_str(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
 # ---------- Public loaders (7 files) ----------
 
 def load_bookmark(data_dir: Path) -> pd.DataFrame:
+    """
+    bookmark.csv: 파일명과 해당 헤더 목록이 정리되어 있는 매핑 테이블.
+    추후 스키마 검증/리네임 정책에 활용 가능.
+    """
     df = _read_csv_safe_any([
         data_dir / "bookmark.csv",
         Path("/mnt/data") / "bookmark.csv"
@@ -108,6 +113,7 @@ def load_party_labels(data_dir: Path) -> pd.DataFrame:
         Path("/mnt/data") / "party_labels.csv"
     ])
     df = _tidy_columns(df)
+    # 흔히 쓰일만한 키 후보들 문자열화
     df = _ensure_str(df, ["정당코드", "정당", "party", "code"])
     return df
 
@@ -167,6 +173,9 @@ def load_index_sample(data_dir: Path) -> pd.DataFrame:
 # ---------- Optional: convenience aggregator ----------
 
 def load_all(data_dir: Union[str, Path]) -> dict:
+    """
+    대시보드에서 한 번에 호출할 수 있는 일괄 로더.
+    """
     data_dir = Path(data_dir)
     return {
         "bookmark": load_bookmark(data_dir),

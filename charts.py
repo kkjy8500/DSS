@@ -6,7 +6,22 @@ from __future__ import annotations
 import re
 import pandas as pd
 import streamlit as st
-import altair as alt
+
+# Altair: 임포트 실패해도 앱이 죽지 않도록 보호 + 행 제한 해제
+try:
+    import altair as alt
+    try:
+        # 5,000 행 제한 해제 (대용량 melt 시 MaxRowsError 방지)
+        alt.data_transformers.enable("default", max_rows=None)
+    except Exception:
+        # 구버전 Altair 호환
+        try:
+            alt.data_transformers.disable_max_rows()
+        except Exception:
+            pass
+except Exception:
+    alt = None
+
 from metrics import compute_24_gap
 
 # -------- 유틸 --------
@@ -54,6 +69,12 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 # -------- 내부: 파이차트 생성 (Altair) --------
 def _pie_chart(title: str, labels: list[str], values: list[float], colors: list[str], width: int = 260, height: int = 260):
+    if alt is None:
+        # Altair 불가 시 간단 폴백 (표시만)
+        st.info(f"{title} 시각화를 Altair 없이 표시합니다.")
+        st.dataframe(pd.DataFrame({"구성": labels, "비율(%)": values}))
+        return
+
     vals = [(v if isinstance(v, (int, float)) and v > 0 else 0.0) for v in values]
     total = sum(vals)
     if total <= 0:
@@ -61,7 +82,7 @@ def _pie_chart(title: str, labels: list[str], values: list[float], colors: list[
         return
     vals = [v / total * 100.0 for v in vals]
     df = pd.DataFrame({"구성": labels, "비율": vals})
- 
+
     chart = (
         alt.Chart(df)
         .mark_arc(innerRadius=60, stroke="white", strokeWidth=1)
@@ -237,18 +258,28 @@ def render_vote_trend_chart(ts: pd.DataFrame):
         st.dataframe(df.head())
         return
 
-    # 범례 순서 & 색상 (필요 시 bookmark.csv/party_labels.csv 기준으로 교체 가능)
+    # Altair 사용 가능 여부 체크
+    if alt is None:
+        st.info("Altair를 사용할 수 없어 기본 라인차트로 대체합니다.")
+        try:
+            pvt = df.pivot_table(index="year", columns="label", values="prop", aggfunc="mean").sort_index()
+            st.line_chart(pvt)
+        except Exception:
+            st.error("기본 라인차트도 실패했습니다.")
+        return
+
+    # 범례 순서 & 색상
     party_order  = ["민주", "보수", "진보", "기타"]
     party_colors = ["#152484", "#E61E2B", "#450693", "#798897"]
 
     vmax = df["prop"].max()
-    y_enc = alt.Y("prop:Q", title="득표율(%)") if vmax > 1 else alt.Y("prop:Q", title="득표율", axis=alt.Axis(format=".0%"))
+    y_enc = alt.Y("prop:Q", title="득표율(%)") if vmax and vmax > 1 else alt.Y("prop:Q", title="득표율", axis=alt.Axis(format=".0%"))
 
     chart = (
         alt.Chart(df)
         .mark_line(point=True)
         .encode(
-            x=alt.X("year:O", title="연도", sort="ascending"),
+            x=alt.X("year:O", title="연도", sort="ascending", axis=alt.Axis(labelAngle=-30, labelOverlap="greedy")),
             y=y_enc,
             color=alt.Color(
                 "label:N",
@@ -263,6 +294,7 @@ def render_vote_trend_chart(ts: pd.DataFrame):
             ],
         )
         .properties(height=300)
+        .interactive()
     )
 
     st.altair_chart(chart, use_container_width=True)
@@ -272,55 +304,55 @@ def render_population_box(pop_df: pd.DataFrame):
     box = st.container()
     with box:
         st.markdown("**인구 정보**")
- 
+
         if pop_df is None or pop_df.empty:
             st.info("인구 데이터가 없습니다.")
             return
- 
+
         pop_df = _norm_cols(pop_df)
         r = pop_df.iloc[0]
- 
+
         # 1) 비율 컬럼 우선
         elder_col  = next((c for c in ["고령층비율", "65세이상비율", "age65p"] if c in pop_df.columns), None)
         youth_col  = next((c for c in ["청년층비율", "39세이하비율", "age39m"] if c in pop_df.columns), None)
         mid_col    = next((c for c in ["40_59비율", "40-59비율", "age40_59p", "4050비율"] if c in pop_df.columns), None)
- 
+
         male_col   = next((c for c in ["남성비율", "남", "male_p", "2030 남성비율"] if c in pop_df.columns), None)
         female_col = next((c for c in ["여성비율", "여", "female_p", "2030 여성비율"] if c in pop_df.columns), None)
- 
+
         elder_pct = _to_pct_float(r.get(elder_col)) if elder_col else None
         youth_pct = _to_pct_float(r.get(youth_col)) if youth_col else None
         mid_pct   = _to_pct_float(r.get(mid_col))   if mid_col   else None
         male_pct  = _to_pct_float(r.get(male_col))  if male_col  else None
         female_pct= _to_pct_float(r.get(female_col))if female_col else None
- 
+
         # 2) 인원수 기반 비율
         total_col = next((c for c in ["유권자수", "유권자 수", "voters", "전체 유권자"] if c in pop_df.columns), None)
         c2030_col = "2030" if "2030" in pop_df.columns else None
         c4050_col = "4050" if "4050" in pop_df.columns else None
         c65p_col  = "65세 이상" if "65세 이상" in pop_df.columns else None
- 
+
         total = _to_int(r.get(total_col)) if total_col else None
         v2030 = _to_int(r.get(c2030_col)) if c2030_col else None
         v4050 = _to_int(r.get(c4050_col)) if c4050_col else None
         v65p  = _to_int(r.get(c65p_col))  if c65p_col  else None
- 
+
         def pct(val):
             return (val / total * 100.0) if (isinstance(val, (int, float)) and isinstance(total, (int, float)) and total) else None
- 
+
         if elder_pct is None:
             elder_pct = pct(v65p)
         if youth_pct is None:
             youth_pct = pct(v2030)
         if mid_pct is None:
             mid_pct = pct(v4050)
- 
+
         # 60-64 추가(남는 비율로 추정)
         s_pct = None
         if all(isinstance(x, (int, float)) for x in [youth_pct, mid_pct, elder_pct]) and isinstance(total, (int, float)):
-            used = youth_pct + mid_pct + elder_pct
+            used = (youth_pct or 0) + (mid_pct or 0) + (elder_pct or 0)
             s_pct = max(0.0, 100.0 - used)
- 
+
         # 2030 남/여
         male_share_2030 = None
         female_share_2030 = None
@@ -333,15 +365,15 @@ def render_population_box(pop_df: pd.DataFrame):
             male_share_2030 = (m_cnt / denom * 100.0) if denom else None
             female_share_2030 = (f_cnt / denom * 100.0) if denom else None
         else:
-            male_share_2030 = male_pct
-            female_share_2030 = female_pct
- 
+            male_share_2030 = _to_pct_float(male_pct) if isinstance(male_pct, (int, float)) else male_pct
+            female_share_2030 = _to_pct_float(female_pct) if isinstance(female_pct, (int, float)) else female_pct
+
         # --- 상단: 유권자 수 ---
         st.metric("유권자 수", f"{total:,}" if isinstance(total, (int, float)) else "N/A")
- 
+
         # --- 파이차트 2개 ---
         col1, col2 = st.columns(2)
- 
+
         y = youth_pct or 0.0
         m = mid_pct   or 0.0
         s = s_pct     or 0.0
@@ -349,7 +381,7 @@ def render_population_box(pop_df: pd.DataFrame):
         with col1:
             age_colors = ["#deebf7", "#9ecae1", "#6baed6", "#08519c"]
             _pie_chart("연령 구성", ["청년층(≤39)", "40-59", "60-64", "65+"], [y, m, s, e], colors=age_colors)
- 
+
         mm = male_share_2030 or 0.0
         ff = female_share_2030 or 0.0
         with col2:

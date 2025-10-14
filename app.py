@@ -1,20 +1,35 @@
 from __future__ import annotations
 
+# ==== Matplotlib/pyplot 완전 차단 + 글리프 경고 전역 무시 ====
+import os, warnings, sys
 
-# ==== Matplotlib 완전 차단 + 글리프 경고 전역 무시 ====
-import os, warnings
-os.environ.setdefault("MPLBACKEND", "agg")  # 혹시라도 로드되면 비GUI 백엔드
+# 혹시 matplotlib이 로드되어도 GUI 백엔드 안 쓰게
+os.environ.setdefault("MPLBACKEND", "agg")
 
-# Matplotlib/Streamlit pyplot 경로에서 나오는 글리프 경고를 전역으로 무시
-warnings.filterwarnings("ignore", category=UserWarning, message=r".*Glyph.*missing.*")
+# streamlit 임포트 전에 경고 필터 장착
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r".*Glyph .* missing from font\(s\).*",
+)
 
-import streamlit as st  # <- 이 시점에 임포트
-# st.pyplot 호출이 어디서 발생해도 완전 무시
+import streamlit as st  # ← 여기서 임포트
+
+# 1) 어디서든 st.pyplot 호출 시 무시하도록 패치
 def _noop_pyplot(*args, **kwargs):
     return None
+
 if hasattr(st, "pyplot"):
     st.pyplot = _noop_pyplot
 
+# 2) 내부 모듈 경로에서 직접 불러도 무시되게 추가 방어
+try:
+    import streamlit.elements.pyplot as _se_pyplot
+    if hasattr(_se_pyplot, "pyplot"):
+        _se_pyplot.pyplot = _noop_pyplot
+except Exception:
+    pass
+# =============================================================
 
 import re
 import streamlit as st

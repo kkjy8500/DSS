@@ -38,8 +38,10 @@ def load_party_competence(data_dir: Path) -> pd.DataFrame:
     return _read_csv_safe_any([data_dir / "(sample)party_competence.csv", Path("/mnt/data") / "(sample)party_competence.csv"])
 
 def load_vote_trend(data_dir: Path) -> pd.DataFrame:
-    # vote_trend_sample_all.csv
-    return _read_csv_safe_any([data_dir / "vote_trend_sample_all.csv", Path("/mnt/data") / "vote_trend_sample_all.csv"])
+    # vote_trend.csv
+    return _read_csv_safe_any([
+        data_dir / "vote_trend.csv",
+        Path("/mnt/data") / "vote_trend.csv"])
 
 def load_results_2024(data_dir: Path) -> pd.DataFrame:
     # 5_na_dis_results.csv

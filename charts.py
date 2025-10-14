@@ -8,28 +8,48 @@ import re
 import streamlit as st
 import pandas as pd
 
-# plotting deps
+# ---------------- plotting deps (matplotlib 우선, 없으면 Altair 대체) ----------------
 try:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib import font_manager, rcParams
+
+    def _set_korean_font():
+        """
+        서버/OS별로 가능한 한글 폰트를 자동 적용.
+        (우선순위: Malgun Gothic → AppleGothic → NanumGothic → Noto Sans CJK KR)
+        """
+        candidates = ["Malgun Gothic", "AppleGothic", "NanumGothic", "Noto Sans CJK KR", "Noto Sans CJK KR Regular"]
+        chosen = None
+        try:
+            installed = {f.name for f in font_manager.fontManager.ttflist}
+            for name in candidates:
+                if name in installed:
+                    chosen = name
+                    break
+        except Exception:
+            chosen = None
+        rcParams["font.family"] = chosen or "DejaVu Sans"
+        rcParams["axes.unicode_minus"] = False  # 마이너스 기호 깨짐 방지
+
+    _set_korean_font()
 except Exception:
     plt = None
+    rcParams = None
 
-# altair for pies
+# Altair (파이/라인 대체 렌더용)
 try:
     import altair as alt
 except Exception:
     alt = None
 
-from metrics import (
-    compute_summary_metrics,
-    compute_24_gap,
-)
+# ---------------- metrics (필요 함수만) ----------------
+from metrics import compute_24_gap
 
-# -------- 유틸 --------
+# ---------------- 유틸 함수 ----------------
 def _to_pct_float(v, default=None):
-    # '45.2%', '45,2', 0.452, ' 45.2 % ' -> 45.2
+    """'45.2%', '45,2', 0.452, ' 45.2 % ' -> 45.2 (percent)"""
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return default
     s = str(v).strip().replace(",", "")
@@ -70,7 +90,7 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     out.columns = [str(c).strip().replace("\n", "").replace("\r", "") for c in out.columns]
     return out
 
-# -------- 내부: 파이차트 생성 (Altair) --------
+# ---------------- 내부: 파이차트 생성 (Altair) ----------------
 def _pie_chart(title: str, labels: list[str], values: list[float], colors: list[str], width: int = 260, height: int = 260):
     if alt is None:
         st.info(f"{title} 시각화(Altair)를 사용할 수 없습니다.")
@@ -97,8 +117,9 @@ def _pie_chart(title: str, labels: list[str], values: list[float], colors: list[
     )
     st.altair_chart(chart, use_container_width=False)
 
-# -------- 24년 결과 카드 (5_na_dis_results.csv) --------
+# ---------------- 24년 결과 카드 (5_na_dis_results.csv) ----------------
 def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, code: str = None):
+    """해당 선거구의 2024 (없으면 최신연도) 1~2위 득표율과 격차 표시."""
     if res_row is None or res_row.empty:
         st.info("해당 선거구의 24년 결과 데이터가 없습니다.")
         return
@@ -117,6 +138,7 @@ def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, 
     else:
         r = res_row.iloc[0]
 
+    # 다양한 컬럼명 호환
     c1n = next((c for c in ["후보1_이름", "1위이름", "1위 후보", "1위_이름", "1st_name"] if c in res_row.columns), None)
     c1v = next((c for c in ["후보1_득표율", "1위득표율", "1위 득표율", "1st_share", "1위득표율(%)"] if c in res_row.columns), None)
     c2n = next((c for c in ["후보2_이름", "2위이름", "2위 후보", "2위_이름", "2nd_name"] if c in res_row.columns), None)
@@ -144,7 +166,7 @@ def render_results_2024_card(res_row: pd.DataFrame, df_24: pd.DataFrame = None, 
         with col3:
             st.metric(label="1~2위 격차", value=_fmt_gap(gap))
 
-# -------- 현직 정보 카드 (current_info.csv) --------
+# ---------------- 현직 정보 카드 (current_info.csv) ----------------
 def render_incumbent_card(cur_row: pd.DataFrame):
     if cur_row is None or cur_row.empty:
         st.info("현직 정보 데이터가 없습니다.")
@@ -169,10 +191,10 @@ def render_incumbent_card(cur_row: pd.DataFrame):
         if status_col:
             st.caption(f"상태: {r.get(status_col)}")
 
-# -------- 진보당 현황 박스 --------
+# ---------------- 진보당 현황 박스 (party_labels.csv 기반) ----------------
 def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
     """
-    party_labels.csv가 지표를 담고 있다면 유연하게 표출.
+    party_labels.csv가 해당 선거구 지표를 담고 있다면 유연하게 표출.
     """
     box = st.container()
     with box:
@@ -211,12 +233,14 @@ def render_prg_party_box(prg_row: pd.DataFrame, pop_row: pd.DataFrame):
                 youth = _fmt_pct(_to_pct_float(rp.get(youth_col))) if youth_col and pd.notna(rp.get(youth_col)) else "N/A"
                 st.write(f"- 고령층 비율: {elder} / 청년층 비율: {youth}")
 
-# -------- 득표 추이 차트 (vote_trend.csv) --------
+# ---------------- 득표 추이 라인차트 (vote_trend.csv) ----------------
 def render_vote_trend_chart(ts: pd.DataFrame):
-    # 안전 가드
-    if plt is None:
-        st.error("시각화 모듈(matplotlib)을 불러오지 못했습니다. 서버 환경에 matplotlib 설치 여부를 확인하세요.")
-        return
+    """
+    득표 추이 라인차트.
+    - matplotlib 가용 시: matplotlib 사용 (한글 폰트 적용 + x축 라벨 간격/회전)
+    - 없으면 Altair로 자동 대체 (겹침 완화 옵션)
+    - 입력 ts는 long(label/prop) 또는 wide(연도+계열) 모두 허용
+    """
     if ts is None or ts.empty:
         st.info("득표 추이 데이터가 없습니다.")
         return
@@ -224,101 +248,129 @@ def render_vote_trend_chart(ts: pd.DataFrame):
     df = _norm_cols(ts.copy())
 
     # long 포맷 감지 (label/prop)
-    label_col = None
-    value_col = None
-    for lc in ["label", "성향", "정당성향", "party_label"]:
-        if lc in df.columns:
-            label_col = lc
-            break
-    for vc in ["prop", "득표율", "비율", "share", "ratio", "pct"]:
-        if vc in df.columns:
-            value_col = vc
-            break
+    label_col = next((c for c in ["label", "성향", "정당성향", "party_label"] if c in df.columns), None)
+    value_col = next((c for c in ["prop", "득표율", "비율", "share", "ratio", "pct"] if c in df.columns), None)
 
-    # year/연도
-    year_col = None
-    for yc in ["year", "연도", "년도"]:
-        if yc in df.columns:
-            year_col = yc
-            break
+    # year/연도 & 선거명
+    year_col = next((c for c in ["year", "연도", "년도"] if c in df.columns), None)
+    elec_col = next((c for c in ["election", "선거명"] if c in df.columns), None)
 
-    # 선거명
-    elec_col = None
-    for ec in ["election", "선거명"]:
-        if ec in df.columns:
-            elec_col = ec
-            break
+    # ---- 공통: x축 라벨 생성
+    def make_x_label(_df: pd.DataFrame) -> pd.DataFrame:
+        d = _df.copy()
+        if year_col and elec_col and (year_col in d.columns) and (elec_col in d.columns):
+            d["__year_label__"] = d[year_col].astype(str) + " " + d[elec_col].astype(str)
+        elif year_col and (year_col in d.columns):
+            d["__year_label__"] = d[year_col].astype(str)
+        elif elec_col and (elec_col in d.columns):
+            d["__year_label__"] = d[elec_col].astype(str)
+        else:
+            if d.index.dtype.kind in ("i", "u"):
+                d = d.reset_index().rename(columns={"index": "연도"})
+                d["__year_label__"] = d["연도"].astype(str)
+            else:
+                d["__year_label__"] = d.index.astype(str)
+        # 정렬
+        if year_col and (year_col in d.columns):
+            d = d.sort_values(by=year_col, ascending=True)
+        return d
 
-    # long -> wide pivot
+    # ---- long → wide
     if label_col and value_col:
         # 값이 0~1이면 %로 변환
         if pd.api.types.is_numeric_dtype(df[value_col]) and (df[value_col].dropna() <= 1).all():
             df[value_col] = df[value_col] * 100.0
         else:
             df[value_col] = df[value_col].apply(lambda x: _to_pct_float(x, default=None))
-        # 라벨축 생성
-        if year_col and elec_col:
-            df["__x__"] = df[year_col].astype(str) + " " + df[elec_col].astype(str)
-        elif year_col:
-            df["__x__"] = df[year_col].astype(str)
-        elif elec_col:
-            df["__x__"] = df[elec_col].astype(str)
-        else:
-            df["__x__"] = df.index.astype(str)
-
-        # 정렬
-        if year_col:
-            df = df.sort_values(by=year_col, ascending=True)
-
-        wide = df.pivot_table(index="__x__", columns=label_col, values=value_col, aggfunc="mean")
-        wide = wide.reset_index().rename(columns={"__x__": "__year_label__"})
+        df = make_x_label(df)
+        wide = df.pivot_table(index="__year_label__", columns=label_col, values=value_col, aggfunc="mean").reset_index()
     else:
-        # wide 그대로 사용 (연도/선거명 기반 x축 생성)
-        # 연도 컬럼 찾기
-        if year_col is None and df.index.dtype.kind in ("i", "u"):
-            df = df.reset_index().rename(columns={"index": "연도"})
-            year_col = "연도"
-        # x라벨
-        if year_col and elec_col:
-            df["__year_label__"] = df[year_col].astype(str) + " " + df[elec_col].astype(str)
-        elif year_col:
-            df["__year_label__"] = df[year_col].astype(str)
-        elif elec_col:
-            df["__year_label__"] = df[elec_col].astype(str)
-        else:
-            df["__year_label__"] = df.index.astype(str)
-        if year_col:
-            df = df.sort_values(by=year_col, ascending=True)
+        df = make_x_label(df)
         wide = df
 
-    # 시리즈 후보 및 파렛트/순서
+    # 시리즈 및 색상
     party_order = ["진보", "중도", "보수", "기타"]
     colors = {"진보": "#450693", "중도": "#152484", "보수": "#E61E2B", "기타": "#798897"}
-
-    # 실제 컬럼: wide 기준에서 party_order 교집합
     series_cols = [p for p in party_order if p in wide.columns]
-
-    # series_cols가 비면, 숫자형 컬럼 자동 탐색(라벨 추정 실패 대비)
     if not series_cols:
-        numeric_cols = [c for c in wide.columns if c not in ["__year_label__", year_col, elec_col] and pd.api.types.is_numeric_dtype(wide[c])]
-        # 최대 6개까지만 표시
-        series_cols = numeric_cols[:6]
-        # 기본 색 하나로 처리(지정 색 없으면 matplotlib 기본)
+        # 숫자형 컬럼 자동 탐색 (최대 6개)
+        series_cols = [c for c in wide.columns if c not in ["__year_label__", year_col, elec_col] and pd.api.types.is_numeric_dtype(wide[c])]
+        series_cols = series_cols[:6]
 
-    x = wide["__year_label__"]
-    fig, ax = plt.subplots(figsize=(10, 5))
-    for col in series_cols:
-        ax.plot(x, wide[col], marker="o", label=col, color=colors.get(col, None))
+    if not series_cols:
+        st.info("그릴 수 있는 수치형 시리즈가 없습니다.")
+        return
 
-    ax.set_title("정당성향별 득표 추이", fontsize=13, pad=15)
-    ax.set_xlabel("연도 / 선거명")
-    ax.set_ylabel("득표율(%)")
-    ax.legend(title="정당 성향", loc="upper left")
-    ax.grid(True, linestyle="--", alpha=0.5)
+    # ---------------- 경로 A: matplotlib 사용 가능 ----------------
+    if plt is not None:
+        x_labels = list(wide["__year_label__"])
+        x_pos = list(range(len(x_labels)))  # 문자열 라벨을 위치값으로
 
-    st.pyplot(fig)
+        fig, ax = plt.subplots(figsize=(10, 5))
+        for col in series_cols:
+            ax.plot(x_pos, wide[col], marker="o", label=col, color=colors.get(col, None))
 
-# -------- 인구 정보 박스 (population.csv) --------
+        # x축 틱 간격 자동 축약 (최대 10개 표시)
+        n = len(x_labels)
+        if n <= 10:
+            tick_idx = list(range(n))
+        else:
+            step = max(1, n // 10)
+            tick_idx = list(range(0, n, step))
+            if tick_idx[-1] != n - 1:
+                tick_idx.append(n - 1)
+
+        ax.set_xticks(tick_idx)
+        ax.set_xticklabels([x_labels[i] for i in tick_idx], rotation=30, ha="right")
+
+        ax.set_title("정당성향별 득표 추이", fontsize=13, pad=15)
+        ax.set_xlabel("연도 / 선거명")
+        ax.set_ylabel("득표율(%)")
+        ax.legend(title="정당 성향", loc="upper left")
+        ax.grid(True, linestyle="--", alpha=0.5)
+
+        fig.tight_layout()
+        st.pyplot(fig)
+        return
+
+    # ---------------- 경로 B: Altair 대체 ----------------
+    try:
+        import altair as alt  # 안전 재시도
+        tidy = wide.melt(id_vars="__year_label__", value_vars=series_cols, var_name="성향", value_name="득표율")
+        tidy = tidy.dropna(subset=["득표율"])
+
+        domain = [c for c in party_order if c in series_cols] + [c for c in series_cols if c not in party_order]
+        rng = [colors.get(c, None) for c in domain]
+
+        chart = (
+            alt.Chart(tidy)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X(
+                    "__year_label__:N",
+                    title="연도 / 선거명",
+                    sort=None,
+                    axis=alt.Axis(labelAngle=-30, labelOverlap="greedy")  # 겹침 완화
+                ),
+                y=alt.Y("득표율:Q", title="득표율(%)"),
+                color=alt.Color("성향:N", scale=alt.Scale(domain=domain, range=rng), title="정당 성향"),
+                tooltip=[
+                    alt.Tooltip("__year_label__:N", title="라벨"),
+                    alt.Tooltip("성향:N"),
+                    alt.Tooltip("득표율:Q", format=".2f")
+                ]
+            )
+            .properties(width=780, height=340, title="정당성향별 득표 추이")
+        )
+        st.altair_chart(chart, use_container_width=True)
+    except Exception:
+        # 최후의 보루: Streamlit 기본 라인차트
+        try:
+            st.line_chart(wide.set_index("__year_label__")[series_cols])
+        except Exception:
+            st.error("시각화 모듈(matplotlib/altair) 사용 불가 및 기본 라인차트도 실패했습니다. 환경 설정을 확인하세요.")
+
+# ---------------- 인구 정보 박스 (population.csv) ----------------
 def render_population_box(pop_df: pd.DataFrame):
     box = st.container()
     with box:
